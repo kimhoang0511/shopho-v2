@@ -35,3 +35,6 @@ httpx[http2]==0.28.0
 # Utils
 python-dotenv==1.0.1
 httpx==0.28.0
+
+# Firebase Cloud Messaging
+firebase-admin==6.5.0
