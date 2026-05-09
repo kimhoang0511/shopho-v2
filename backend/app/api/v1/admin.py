@@ -166,10 +166,30 @@ async def test_push(
     if not tokens:
         raise HTTPException(status_code=404, detail="Không tìm thấy device token nào")
 
+    import base64, os as _os
+    b64_raw = _os.environ.get("FIREBASE_SERVICE_ACCOUNT_B64", "")
+    b64_info = {
+        "present": bool(b64_raw),
+        "length": len(b64_raw),
+        "starts_with": b64_raw[:6] if b64_raw else "",
+        "ends_with": b64_raw[-6:] if b64_raw else "",
+        "has_leading_quote": b64_raw.startswith('"') if b64_raw else False,
+        "has_newline": "\n" in b64_raw if b64_raw else False,
+    }
+    try:
+        decoded = base64.b64decode(b64_raw.strip()).decode()
+        import json as _json
+        parsed = _json.loads(decoded)
+        b64_info["decode_ok"] = True
+        b64_info["project_id"] = parsed.get("project_id", "?")
+    except Exception as decode_err:
+        b64_info["decode_ok"] = False
+        b64_info["decode_error"] = str(decode_err)
+
     from app.core.fcm import _init
     fcm_ready = _init()
     if not fcm_ready:
-        raise HTTPException(status_code=500, detail="FCM chưa khởi tạo được — kiểm tra FIREBASE_SERVICE_ACCOUNT_B64")
+        raise HTTPException(status_code=500, detail={"message": "FCM chưa khởi tạo được", "b64_diagnostics": b64_info})
 
     stale = await send_push(tokens, title, message, {"test": "true"})
     return {
