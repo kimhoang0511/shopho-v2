@@ -11,7 +11,7 @@ import random
 import string
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -137,23 +137,24 @@ async def get_topup_status(
 async def payment_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    secure_token: str = Header(default="", alias="secure-token"),
-    authorization: str = Header(default=""),
 ):
     """
     Webhook từ Casso khi nhận được giao dịch chuyển khoản.
 
-    Casso gửi header: secure-token: <PAYMENT_WEBHOOK_SECRET>
+    Casso gửi header: Secure-Token: <PAYMENT_WEBHOOK_SECRET>
     Payload JSON chứa:
       - data[].amount  : số tiền (int, VND)
       - data[].description : nội dung chuyển khoản (chứa order_code)
       - data[].is_incoming : True nếu là tiền vào
     """
-    # Verify Casso secret — Casso gửi qua header "secure-token"
+    # Verify Casso secret — Secure-Token header (primary) hoặc Authorization: Bearer (fallback)
     if settings.payment_webhook_secret:
         secret = settings.payment_webhook_secret
-        received = secure_token or authorization
-        if received not in (secret, f"Apikey {secret}"):
+        received = (
+            request.headers.get("Secure-Token")
+            or request.headers.get("Authorization", "").replace("Bearer ", "")
+        )
+        if received != secret:
             raise HTTPException(401, "Invalid webhook secret")
 
     import re
