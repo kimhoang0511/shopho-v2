@@ -34,7 +34,7 @@ from app.models.user import User, DeviceToken
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
-_ACTIVE_STATUSES = {OrderStatus.accepted}
+_ACTIVE_STATUSES = {OrderStatus.accepted, OrderStatus.completed}
 
 _TOKEN_TTL = timedelta(hours=1)
 
