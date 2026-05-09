@@ -172,7 +172,16 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
       }
     } catch (e) {
       debugPrint('[LiveKit] connect error: $e');
-      if (mounted) Navigator.of(context).pop();
+      final msg = e.toString().toLowerCase();
+      final isPermission = msg.contains('permission') || msg.contains('denied') || msg.contains('microphone');
+      if (mounted) {
+        if (isPermission) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cần cấp quyền microphone để thực hiện cuộc gọi')),
+          );
+        }
+        Navigator.of(context).pop();
+      }
     }
   }
 

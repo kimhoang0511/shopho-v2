@@ -110,11 +110,13 @@ class CallService {
         final livekitUrl = extra?['livekit_url'] as String? ?? '';
         if (orderId != null) {
           // Start fetching the LiveKit token immediately — runs in parallel
-          // with navigation so the token is ready when _init() needs it.
+          // with the permission dialog so both resolve before _init() needs them.
           _prefetchRecipientToken(orderId);
-          // Request mic permission now so LocalAudioTrack.create() won't
-          // block waiting for a permission dialog inside _init().
-          Permission.microphone.request().ignore();
+          // Await mic permission before navigating. On fresh install the dialog
+          // must be granted first — otherwise LocalAudioTrack.create() throws and
+          // the call screen immediately pops itself. On subsequent calls this
+          // resolves instantly because the permission is already granted.
+          await Permission.microphone.request();
           final callInfo = {
             'orderId': orderId,
             'callerName': callerName,
