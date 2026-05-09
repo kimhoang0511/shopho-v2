@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/api/api_client.dart';
 import '../../../../core/widgets/contact_footer.dart';
 
-const _kTopupWebUrl = 'http://localhost:5173';
+const _kTopupWebUrl = 'https://web-shopho-production.up.railway.app';
 
 // ─── Provider ────────────────────────────────────────────────
 
