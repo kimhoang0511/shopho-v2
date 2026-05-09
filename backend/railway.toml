@@ -3,8 +3,6 @@ builder = "dockerfile"
 dockerfilePath = "backend/Dockerfile"
 
 [deploy]
-# Runs migrations before each new deploy goes live.
-# If this fails, Railway aborts the deploy and keeps the old version running.
 healthcheckPath = "/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
