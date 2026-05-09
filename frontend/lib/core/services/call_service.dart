@@ -204,12 +204,13 @@ class CallService {
         'room_name': roomName,
       },
       android: const AndroidParams(
-        isCustomNotification: true,
+        isCustomNotification: false,
         isShowFullLockedScreen: true,
-        ringtonePath: 'system_ringtone_default',
+        ringtonePath: 'default',
         actionColor: '#5B6AF0',
         incomingCallNotificationChannelName: 'Cuộc gọi đến',
         missedCallNotificationChannelName: 'Cuộc gọi nhỡ',
+        isShowLogo: false,
       ),
       ios: const IOSParams(
         iconName: 'AppIcon',
