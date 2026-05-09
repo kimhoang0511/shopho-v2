@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://shopho-production.up.railway.app/api/v1'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://backend-shopho-production.up.railway.app/api/v1'
 
 const PACKAGE_META = {
   5:   { highlight: false, badge: null,            perSlotFn: (p) => `${(p/5).toLocaleString('vi-VN')} ₫ / lượt` },
