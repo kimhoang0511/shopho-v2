@@ -501,8 +501,6 @@ async def propose_gold(
         raise OrderError("Chỉ có thể đề nghị trên đơn đang chờ tiếp nhận", 400)
     if order.creator_id == user.id:
         raise OrderError("Không thể đề nghị trên đơn của chính mình", 400)
-    if user.order_slots <= 0:
-        raise OrderError("Bạn đã hết lượt. Vui lòng nạp thêm lượt để tiếp tục.", 403)
     if proposed_gold <= float(order.gold_reward):
         raise OrderError(f"Mức đề nghị phải cao hơn {float(order.gold_reward)} Gold", 400)
 

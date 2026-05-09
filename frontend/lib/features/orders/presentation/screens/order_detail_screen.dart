@@ -796,11 +796,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: OutlinedButton.icon(
-              onPressed: (_proposing || !hasSlots) ? null : _proposeGold,
+              onPressed: _proposing ? null : _proposeGold,
               icon: _proposing
                   ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.trending_up_rounded, size: 18),
-              label: Text(_proposing ? 'Đang gửi...' : (!hasSlots ? 'Hết lượt' : 'Đề nghị tăng tiền công')),
+              label: Text(_proposing ? 'Đang gửi...' : 'Đề nghị tăng tiền công'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF8B6000),
                 side: const BorderSide(color: Color(0xFFD4A017)),
