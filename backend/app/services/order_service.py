@@ -13,41 +13,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.redis import cache_delete, publish_event
 from app.models.order import Order, OrderImage, OrderStatus, ShipLocationType, VALIDITY_OPTIONS
-from app.models.user import DeviceToken, ShipperAlert, User
+from app.models.user import DeviceToken, ShipperAlert, ShipperAlertLocation, User
 from app.core.fcm import send_push
 from app.schemas.order import OrderCreate, OrderListItem, OrderResponse
-from app.services.gold_service import GoldError, adjust_gold_for_order_edit, bonus_gold_on_completion, dispute_gold, lock_gold_for_order, lock_gold_for_renew, partial_refund_on_delivery, reduce_gold_in_delivery, refund_creator, refund_creator_on_accepted_cancel, refund_creator_on_shipper_cancel, reward_shipper
 
 logger = logging.getLogger(__name__)
-
-
-def _alert_matches(
-    alert: ShipperAlert,
-    ship_apartment_id: uuid.UUID | None,
-    ship_building: str | None,
-    ship_floor: int | None,
-) -> bool:
-    """Return True if the new order's location falls within this shipper's browse filter."""
-    apt_ids: list[str] = alert.apartment_ids or []
-    b_keys: list[str] = alert.building_keys or []
-    floors: list[int] = alert.floors or []
-
-    apt_id_str = str(ship_apartment_id) if ship_apartment_id else None
-
-    matched = False
-    if apt_id_str and apt_id_str in apt_ids:
-        matched = True
-    if apt_id_str and ship_building and f"{apt_id_str}:{ship_building}" in b_keys:
-        matched = True
-
-    if not matched:
-        return False
-
-    # If shipper filtered by specific floors, order must declare a matching floor
-    if floors:
-        return ship_floor is not None and ship_floor in floors
-
-    return True
 
 
 async def _push_new_order_alerts(
@@ -60,42 +30,43 @@ async def _push_new_order_alerts(
     note: str,
     gold_reward: float,
 ) -> None:
-    """Background task: FCM push to shippers with a matching enabled browse-alert.
+    """Background task: FCM push to shippers whose location filter matches this order.
 
-    Uses 2 queries total (alerts + batch token fetch) instead of 1+N.
+    Single 3-way JOIN (locations → alerts → device_tokens) = one DB round-trip.
+    idx_sal_apt_building(apartment_id, building) limits the scan to rows for
+    this apartment only, so query cost scales with shippers-per-apt, not total users.
     """
+    if ship_apartment_id is None:
+        return
+
     from app.database import SessionLocal
 
-    # Brief delay so the calling transaction can commit first
     await asyncio.sleep(0.2)
     try:
         async with SessionLocal() as db:
-            # Query 1: all enabled alerts
-            alerts_res = await db.execute(
-                select(ShipperAlert).where(ShipperAlert.enabled.is_(True))
-            )
-            matching_user_ids = [
-                alert.user_id
-                for alert in alerts_res.scalars().all()
-                if alert.user_id != creator_id
-                and _alert_matches(alert, ship_apartment_id, ship_building, ship_floor)
-            ]
-
-            if not matching_user_ids:
-                return
-
-            # Query 2: batch-fetch all device tokens in one IN query
-            tokens_res = await db.execute(
-                select(DeviceToken.token).where(
-                    DeviceToken.user_id.in_(matching_user_ids)
+            rows = await db.execute(
+                select(DeviceToken.token)
+                .join(ShipperAlertLocation, ShipperAlertLocation.user_id == DeviceToken.user_id)
+                .join(ShipperAlert, ShipperAlert.user_id == ShipperAlertLocation.user_id)
+                .where(
+                    ShipperAlertLocation.apartment_id == ship_apartment_id,
+                    or_(ShipperAlertLocation.building.is_(None),
+                        ShipperAlertLocation.building == ship_building),
+                    or_(ShipperAlertLocation.floor.is_(None),
+                        ShipperAlertLocation.floor == ship_floor),
+                    ShipperAlert.enabled.is_(True),
+                    ShipperAlert.user_id != creator_id,
+                    or_(ShipperAlert.min_gold.is_(None),
+                        ShipperAlert.min_gold <= gold_reward),
                 )
+                .distinct()
             )
-            tokens = list(tokens_res.scalars().all())
+            tokens = list(rows.scalars().all())
             if tokens:
                 await send_push(
                     tokens,
                     "Có đơn hàng mới!",
-                    f"Gold: {gold_reward:.0f} · {note[:60]}",
+                    f"{gold_reward:.0f}K · {note[:60]}",
                     {"order_id": str(order_id), "type": "new_order"},
                 )
     except Exception as exc:
@@ -151,6 +122,11 @@ async def create_order(
         if not data.ship_room:
             raise OrderError("Cần nhập số phòng cho vị trí ship này")
 
+    if creator.order_slots <= 0:
+        raise OrderError("Bạn đã hết lượt tạo đơn. Vui lòng nạp thêm lượt để tiếp tục.", 403)
+    creator.order_slots -= 1
+    db.add(creator)
+
     order = Order(
         creator_id=creator.id,
         note=data.note,
@@ -170,12 +146,6 @@ async def create_order(
     # Attach images
     for idx, (key, url) in enumerate(image_keys):
         db.add(OrderImage(order_id=order.id, storage_key=key, public_url=url, sort_order=idx))
-
-    # Lock gold from creator – raises GoldError if insufficient funds
-    try:
-        await lock_gold_for_order(db, creator.id, order.id, data.gold_reward, order_note=data.note)
-    except GoldError as e:
-        raise OrderError(e.detail, e.status_code)
 
     await db.flush()
 
@@ -284,10 +254,6 @@ async def update_order(
         order.expires_at = _calc_expires(validity_option)
 
     if gold_reward != float(order.gold_reward):
-        try:
-            await adjust_gold_for_order_edit(db, user.id, order.id, float(order.gold_reward), gold_reward, order_note=order.note)
-        except GoldError as e:
-            raise OrderError(e.detail, e.status_code)
         order.gold_reward = gold_reward
 
     if image_keys is not None:
@@ -297,6 +263,19 @@ async def update_order(
 
     await db.flush()
     await _invalidate_order_cache()
+
+    asyncio.create_task(
+        _push_new_order_alerts(
+            order_id=order.id,
+            ship_apartment_id=order.ship_apartment_id,
+            ship_building=order.ship_building,
+            ship_floor=order.ship_floor,
+            creator_id=order.creator_id,
+            note=order.note,
+            gold_reward=float(order.gold_reward),
+        )
+    )
+
     return await _get_order_or_404(db, order.id)
 
 
@@ -324,7 +303,11 @@ async def accept_order(db: AsyncSession, shipper: User, order_id: uuid.UUID, est
         raise OrderError("Đơn đã hết hiệu lực", 410)
     if order.creator_id == shipper.id:
         raise OrderError("Bạn không thể nhận đơn của chính mình", 400)
+    if shipper.order_slots <= 0:
+        raise OrderError("Bạn đã hết lượt nhận đơn. Vui lòng nạp thêm lượt để tiếp tục.", 403)
 
+    shipper.order_slots -= 1
+    db.add(shipper)
     order.status = OrderStatus.accepted
     order.shipper_id = shipper.id
     order.accepted_at = now
@@ -332,9 +315,7 @@ async def accept_order(db: AsyncSession, shipper: User, order_id: uuid.UUID, est
     if estimated_minutes is not None:
         order.estimated_delivery_at = now + timedelta(minutes=estimated_minutes)
 
-    # Gold stays locked – will be rewarded to shipper only when creator confirms completion
     await db.flush()
-    await db.refresh(shipper)
 
     await publish_event("order_accepted", {
         "order_id": str(order.id),
@@ -343,7 +324,7 @@ async def accept_order(db: AsyncSession, shipper: User, order_id: uuid.UUID, est
     await _invalidate_order_cache()
     await _push(db, order.creator_id, "Đơn hàng đã được nhận", f"{shipper.display_name or shipper.username} đã nhận đơn của bạn", order.id)
 
-    return await _get_order_or_404(db, order.id), float(shipper.gold_balance)
+    return await _get_order_or_404(db, order.id)
 
 
 # ─── SHIPPER: CONFIRM DELIVERY ───────────────────────────────
@@ -353,6 +334,7 @@ async def shipper_confirm_delivery(
     shipper: User,
     order_id: uuid.UUID,
     adjusted_gold: float | None = None,
+    total_gold: float | None = None,
 ) -> Order:
     order = await db.scalar(
         select(Order).where(Order.id == order_id).with_for_update()
@@ -367,58 +349,31 @@ async def shipper_confirm_delivery(
     if adjusted_gold is not None:
         original = float(order.gold_reward)
         if adjusted_gold < 2:
-            raise OrderError("Gold tối thiểu là 2", 400)
+            raise OrderError("Phí tối thiểu là 2", 400)
         if adjusted_gold > original:
-            raise OrderError("Không thể tăng gold khi xác nhận giao", 400)
+            raise OrderError("Không thể tăng phí khi xác nhận giao", 400)
         if adjusted_gold < original:
-            diff = original - adjusted_gold
-            try:
-                await partial_refund_on_delivery(db, order.creator_id, order.id, diff, order_note=order.note)
-            except GoldError as e:
-                raise OrderError(e.detail, e.status_code)
             order.gold_reward = adjusted_gold
 
+    if total_gold is not None:
+        if total_gold < float(order.gold_reward):
+            raise OrderError("Tổng tiền phải lớn hơn hoặc bằng tiền công mua/ship", 400)
+        order.total_gold = total_gold
+
     now = datetime.now(timezone.utc)
-    order.status = OrderStatus.delivering
-    order.delivering_at = now
+    order.status = OrderStatus.completed
+    order.completed_at = now
+    shipper_id = order.shipper_id
+    gold_amount = float(order.gold_reward)
     await db.flush()
 
-    await publish_event("order_delivering", {"order_id": str(order.id)})
-    await _push(db, order.creator_id, "Shipper đã báo giao hàng", "Xác nhận đã nhận được hàng để hoàn tất đơn", order.id)
+    from app.services.gold_service import reward_shipper
+    await reward_shipper(db, shipper_id, order.id, gold_amount)
+
+    await publish_event("order_completed", {"order_id": str(order.id)})
+    await _push(db, order.creator_id, "Đơn hàng đã hoàn thành", "Shipper đã xác nhận giao hàng thành công", order.id)
     return await _get_order_or_404(db, order.id)
 
-
-# ─── SHIPPER: REDUCE GOLD DURING DELIVERY ────────────────────
-
-async def shipper_reduce_gold(
-    db: AsyncSession,
-    shipper: User,
-    order_id: uuid.UUID,
-    new_gold: float,
-) -> Order:
-    order = await db.scalar(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
-    if not order:
-        raise OrderError("Đơn không tồn tại", 404)
-    if order.shipper_id != shipper.id:
-        raise OrderError("Bạn không phải shipper của đơn này", 403)
-    if order.status != OrderStatus.delivering:
-        raise OrderError("Chỉ có thể giảm gold khi đơn đang ở trạng thái 'đang giao'", 400)
-
-    current = float(order.gold_reward)
-    if new_gold >= current:
-        raise OrderError("Chỉ được giảm gold, không được tăng", 400)
-
-    diff = current - new_gold
-    try:
-        await reduce_gold_in_delivery(db, order.creator_id, order.id, diff, new_gold, order_note=order.note)
-    except GoldError as e:
-        raise OrderError(e.detail, e.status_code)
-
-    order.gold_reward = new_gold
-    await db.flush()
-    return await _get_order_or_404(db, order.id)
 
 
 # ─── SHIPPER: CANCEL ACCEPTED/DELIVERING ─────────────────────
@@ -431,8 +386,8 @@ async def shipper_cancel_order(db: AsyncSession, shipper: User, order_id: uuid.U
         raise OrderError("Đơn không tồn tại", 404)
     if order.shipper_id != shipper.id:
         raise OrderError("Bạn không phải shipper của đơn này", 403)
-    if order.status not in (OrderStatus.accepted, OrderStatus.delivering):
-        raise OrderError("Chỉ có thể huỷ đơn đang ở trạng thái 'đã nhận' hoặc 'đang giao'", 400)
+    if order.status != OrderStatus.accepted:
+        raise OrderError("Chỉ có thể huỷ đơn đang ở trạng thái 'đã nhận'", 400)
 
     now = datetime.now(timezone.utc)
     still_valid = order.expires_at > now
@@ -450,8 +405,6 @@ async def shipper_cancel_order(db: AsyncSession, shipper: User, order_id: uuid.U
     else:
         order.status = OrderStatus.cancelled
         order.cancelled_at = now
-        # Refund gold back to creator (gold was locked but never paid to shipper)
-        await refund_creator_on_shipper_cancel(db, order.creator_id, order.id, float(order.gold_reward), order_note=order.note)
         await db.flush()
         await publish_event("order_cancelled", {"order_id": str(order.id)})
 
@@ -475,54 +428,21 @@ async def complete_order(
         raise OrderError("Đơn không tồn tại", 404)
     if order.creator_id != user.id:
         raise OrderError("Chỉ người tạo đơn mới có thể xác nhận hoàn thành", 403)
-    if order.status not in (OrderStatus.accepted, OrderStatus.delivering):
-        raise OrderError("Chỉ có thể hoàn thành đơn đang ở trạng thái 'đã nhận' hoặc 'đang giao'", 400)
+    if order.status != OrderStatus.accepted:
+        raise OrderError("Chỉ có thể hoàn thành đơn đang ở trạng thái 'đã nhận'", 400)
 
     order.status = OrderStatus.completed
     order.completed_at = datetime.now(timezone.utc)
 
-    # Release locked gold to shipper
-    try:
-        await reward_shipper(db, order.shipper_id, order.id, float(order.gold_reward), order_note=order.note)
-        if bonus_gold and bonus_gold > 0:
-            await bonus_gold_on_completion(db, user.id, order.shipper_id, order.id, bonus_gold, order_note=order.note)
-            order.gold_reward = float(order.gold_reward) + bonus_gold
-    except GoldError as e:
-        raise OrderError(e.detail, e.status_code)
+    if bonus_gold and bonus_gold > 0:
+        order.gold_reward = float(order.gold_reward) + bonus_gold
 
     shipper_id = order.shipper_id
     await db.flush()
     await publish_event("order_completed", {"order_id": str(order.id)})
-    await _push(db, shipper_id, "Đơn hoàn thành!", f"{float(order.gold_reward):.0f} Gold đã được cộng vào tài khoản", order.id)
+    await _push(db, shipper_id, "Đơn hoàn thành!", "Người đặt đã xác nhận hoàn thành đơn", order.id)
     return await _get_order_or_404(db, order.id)
 
-
-# ─── DISPUTE (creator claims non-delivery) ───────────────────
-
-async def dispute_order(db: AsyncSession, user: User, order_id: uuid.UUID) -> Order:
-    order = await db.scalar(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
-    if not order:
-        raise OrderError("Đơn không tồn tại", 404)
-    if order.creator_id != user.id:
-        raise OrderError("Chỉ người tạo đơn mới có thể báo xung đột", 403)
-    if order.status != OrderStatus.delivering:
-        raise OrderError("Chỉ có thể báo xung đột khi đơn đang ở trạng thái 'đang giao'", 400)
-
-    order.status = OrderStatus.disputed
-    order.completed_at = datetime.now(timezone.utc)
-
-    try:
-        await dispute_gold(db, order.creator_id, order.shipper_id, order.id, float(order.gold_reward), order_note=order.note)
-    except GoldError as e:
-        raise OrderError(e.detail, e.status_code)
-
-    shipper_id = order.shipper_id
-    await db.flush()
-    await publish_event("order_disputed", {"order_id": str(order.id)})
-    await _push(db, shipper_id, "Xung đột đơn hàng", "Người đặt báo chưa nhận được hàng. Gold được chia đôi.", order.id)
-    return await _get_order_or_404(db, order.id)
 
 
 # ─── CANCEL ─────────────────────────────────────────────────
@@ -543,7 +463,6 @@ async def cancel_order(db: AsyncSession, user: User, order_id: uuid.UUID) -> Ord
     if order.status == OrderStatus.pending:
         order.status = OrderStatus.cancelled
         order.cancelled_at = now
-        await refund_creator(db, order.creator_id, order.id, float(order.gold_reward), order_note=order.note)
 
     elif order.status == OrderStatus.accepted:
         # Allow creator to cancel within 10 minutes of acceptance
@@ -552,7 +471,6 @@ async def cancel_order(db: AsyncSession, user: User, order_id: uuid.UUID) -> Ord
         shipper_id = order.shipper_id
         order.status = OrderStatus.cancelled
         order.cancelled_at = now
-        await refund_creator_on_accepted_cancel(db, order.creator_id, order.id, float(order.gold_reward), order_note=order.note)
 
     else:
         raise OrderError("Không thể huỷ đơn ở trạng thái hiện tại", 400)
@@ -561,7 +479,7 @@ async def cancel_order(db: AsyncSession, user: User, order_id: uuid.UUID) -> Ord
     await publish_event("order_cancelled", {"order_id": str(order.id)})
     await _invalidate_order_cache()
     if shipper_id:
-        await _push(db, shipper_id, "Đơn hàng bị huỷ", "Người đặt đã huỷ đơn bạn đang nhận. Gold đã được hoàn trả.", order.id)
+        await _push(db, shipper_id, "Đơn hàng bị huỷ", "Người đặt đã huỷ đơn bạn đang nhận.", order.id)
     return await _get_order_or_404(db, order.id)
 
 
@@ -583,6 +501,8 @@ async def propose_gold(
         raise OrderError("Chỉ có thể đề nghị trên đơn đang chờ tiếp nhận", 400)
     if order.creator_id == user.id:
         raise OrderError("Không thể đề nghị trên đơn của chính mình", 400)
+    if user.order_slots <= 0:
+        raise OrderError("Bạn đã hết lượt. Vui lòng nạp thêm lượt để tiếp tục.", 403)
     if proposed_gold <= float(order.gold_reward):
         raise OrderError(f"Mức đề nghị phải cao hơn {float(order.gold_reward)} Gold", 400)
 
@@ -609,8 +529,8 @@ async def propose_gold(
     await _push(
         db,
         order.creator_id,
-        "Shipper đề nghị tăng Gold!",
-        f"{proposer_name} đề nghị tăng lên {proposed_gold:.0f} Gold cho đơn của bạn",
+        "Shipper đề nghị tăng tiền!",
+        f"{proposer_name} đề nghị tăng lên {proposed_gold:.0f}K cho đơn của bạn",
         order.id,
     )
 
@@ -656,12 +576,6 @@ async def renew_order(
     if order.status != OrderStatus.expired:
         raise OrderError("Chỉ có thể đặt lại đơn đã hết hạn", 400)
 
-    previous_expires_at = order.expires_at
-    try:
-        await lock_gold_for_renew(db, user.id, order.id, float(order.gold_reward), previous_expires_at, order_note=order.note)
-    except GoldError as e:
-        raise OrderError(e.detail, e.status_code)
-
     order.status = OrderStatus.pending
     order.expires_at = _calc_expires(order.validity_option)
     await db.flush()
@@ -698,14 +612,9 @@ async def accept_gold_proposal(
     if not proposal:
         raise OrderError("Không tìm thấy đề nghị", 404)
 
-    old_gold = float(order.gold_reward)
     new_gold = float(proposal.proposed_gold)
     proposer_id = proposal.proposer_id  # capture before bulk-delete below
 
-    try:
-        await adjust_gold_for_order_edit(db, user.id, order_id, old_gold, new_gold, order_note=order.note)
-    except GoldError as e:
-        raise OrderError(e.detail, e.status_code)
     order.gold_reward = new_gold
 
     await db.execute(delete(GoldProposal).where(GoldProposal.order_id == order_id))
@@ -716,8 +625,8 @@ async def accept_gold_proposal(
     await _push(
         db,
         proposer_id,
-        "Đề nghị Gold được chấp nhận!",
-        f"Người đặt chấp nhận mức {new_gold:.0f} Gold của bạn. Hãy vào nhận đơn ngay!",
+        "Đề nghị tiền được chấp nhận!",
+        f"Người đặt chấp nhận mức {new_gold:.0f}K của bạn. Hãy vào nhận đơn ngay!",
         order.id,
     )
     return updated_order

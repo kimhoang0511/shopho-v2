@@ -33,6 +33,21 @@ class GoldLedger(Base):
     user: Mapped["User"] = relationship("User", back_populates="gold_transactions")
 
 
+class SlotTopUpOrder(Base):
+    """Tracks purchase of order-slot packages via bank transfer."""
+
+    __tablename__ = "slot_topup_orders"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    order_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    slots_amount: Mapped[int] = mapped_column(nullable=False)
+    amount_vnd: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("NOW()"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class GoldTopUpOrder(Base):
     __tablename__ = "gold_topup_orders"
 

@@ -40,6 +40,7 @@ dependencies:
   livekit_client: ^2.3.5
 
   package_info_plus: ^8.0.0
+  saver_gallery: ^3.0.7
 
   # Utils
   freezed_annotation: ^2.4.1

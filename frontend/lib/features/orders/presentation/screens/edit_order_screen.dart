@@ -77,10 +77,27 @@ class _EditFormState extends ConsumerState<_EditForm> {
     _goldCtrl = TextEditingController(text: o.goldReward.toStringAsFixed(0));
     _location = o.shipLocation;
     _validity = _validityOptions.containsKey(o.validityOption) ? o.validityOption : '30_min';
+    _goldCtrl.addListener(_onGoldChanged);
+  }
+
+  void _onGoldChanged() => setState(() {});
+
+  String _vndHint(String raw) {
+    final n = double.tryParse(raw.trim());
+    if (n == null || n <= 0) return '';
+    final vnd = (n * 1000).round();
+    final s = vnd.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+      buf.write(s[i]);
+    }
+    return '${buf.toString()} đ';
   }
 
   @override
   void dispose() {
+    _goldCtrl.removeListener(_onGoldChanged);
     _noteCtrl.dispose();
     _goldCtrl.dispose();
     super.dispose();
@@ -178,16 +195,20 @@ class _EditFormState extends ConsumerState<_EditForm> {
           TextFormField(
             controller: _goldCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Trả gold công ship',
-              prefixIcon: Icon(Icons.monetization_on_outlined),
-              suffixText: 'Gold',
-              helperText: 'Chỉ tính công mua/ship, KHÔNG bao gồm tiền hàng mua. Tiền hàng mua tự thanh toán riêng với người ship.',
+            decoration: InputDecoration(
+              labelText: 'Trả tiền công mua/ship hộ',
+              prefixIcon: const Icon(Icons.monetization_on_outlined),
+              suffixText: 'K',
+              helperText: () {
+                final vnd = _vndHint(_goldCtrl.text);
+                return vnd.isEmpty
+                    ? 'Chỉ tính công mua/ship, KHÔNG bao gồm tiền hàng mua. Tiền hàng mua tự thanh toán riêng với người ship.'
+                    : '= $vnd  ·  Chỉ tính công mua/ship, KHÔNG bao gồm tiền hàng mua.';
+              }(),
               helperMaxLines: 3,
             ),
             validator: (v) {
-              final n = double.tryParse(v ?? '');
-              if (n == null || n < 2) return 'Tối thiểu 2 Gold';
+              if (double.tryParse(v ?? '') == null) return 'Vui lòng nhập số hợp lệ';
               return null;
             },
           ),

@@ -28,7 +28,7 @@ class OrderCreate(BaseModel):
     @classmethod
     def gold_positive(cls, v: float) -> float:
         if v <= 0:
-            raise ValueError("Gold reward phải lớn hơn 0")
+            raise ValueError("tiền công mua/ship phải lớn hơn 0")
         return v
 
     @field_validator("validity_option")
@@ -63,7 +63,10 @@ class UserInfo(BaseModel):
     model_config = {"from_attributes": True}
 
 
-ShipperInfo = UserInfo
+class ShipperInfo(UserInfo):
+    bank_code: str | None = None
+    bank_account_number: str | None = None
+    bank_account_name: str | None = None
 
 
 class OrderListItem(BaseModel):
@@ -114,9 +117,10 @@ class OrderResponse(BaseModel):
     completed_at: datetime | None
     estimated_minutes: int | None = None
     estimated_delivery_at: datetime | None = None
+    total_gold: float | None = None
     images: list[ImageInfo] = []
     creator: UserInfo | None = None
-    shipper: UserInfo | None = None
+    shipper: ShipperInfo | None = None
     min_proposed_gold: float | None = None
 
     model_config = {"from_attributes": True}
@@ -168,6 +172,7 @@ class AcceptOrderBody(BaseModel):
 
 class DeliverOrderBody(BaseModel):
     adjusted_gold: float | None = Field(None, ge=2)
+    total_gold: float | None = Field(None, gt=0)
 
 
 class CompleteOrderBody(BaseModel):
@@ -180,4 +185,3 @@ class ReduceGoldBody(BaseModel):
 
 class AcceptOrderResponse(BaseModel):
     order: OrderResponse
-    new_gold_balance: float

@@ -4,7 +4,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'order_model.freezed.dart';
 part 'order_model.g.dart';
 
-enum OrderStatus { pending, accepted, delivering, completed, cancelled, expired, disputed }
+enum OrderStatus { pending, accepted, completed, cancelled, expired }
 enum ShipLocationType { building, floor, room }
 
 extension ShipLocationTypeX on ShipLocationType {
@@ -64,6 +64,9 @@ class OrderUserInfo with _$OrderUserInfo {
     required String username,
     @JsonKey(name: 'display_name') String? displayName,
     @JsonKey(name: 'avatar_url') String? avatarUrl,
+    @JsonKey(name: 'bank_code') String? bankCode,
+    @JsonKey(name: 'bank_account_number') String? bankAccountNumber,
+    @JsonKey(name: 'bank_account_name') String? bankAccountName,
   }) = _OrderUserInfo;
 
   factory OrderUserInfo.fromJson(Map<String, dynamic> json) => _$OrderUserInfoFromJson(json);
@@ -97,6 +100,7 @@ class OrderDetail with _$OrderDetail {
     @JsonKey(name: 'estimated_minutes') int? estimatedMinutes,
     @JsonKey(name: 'estimated_delivery_at') DateTime? estimatedDeliveryAt,
     @JsonKey(name: 'min_proposed_gold') double? minProposedGold,
+    @JsonKey(name: 'total_gold') double? totalGold,
     OrderUserInfo? creator,
     OrderUserInfo? shipper,
   }) = _OrderDetail;

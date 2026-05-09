@@ -1,16 +1,17 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.deps import current_user
 from app.database import get_db
 from app.models.apartment import Apartment
-from app.models.gold import GoldLedger
-from app.models.user import ShipperAlert, User
+from app.models.user import ShipperAlert, ShipperAlertLocation, User
 from app.schemas.apartment import ApartmentOut
-from app.schemas.user import GoldHistoryItem, UserProfile, UserUpdate
+from app.schemas.user import UserProfile, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -39,22 +40,6 @@ async def list_apartments_for_user(
 ):
     result = await db.execute(
         select(Apartment).options(selectinload(Apartment.buildings)).order_by(Apartment.name)
-    )
-    return list(result.scalars().all())
-
-
-@router.get("/me/gold/history", response_model=list[GoldHistoryItem])
-async def gold_history(
-    limit: int = Query(30, le=100),
-    offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_user),
-):
-    result = await db.execute(
-        select(GoldLedger)
-        .where(GoldLedger.user_id == user.id)
-        .order_by(GoldLedger.created_at.desc())
-        .limit(limit).offset(offset)
     )
     return list(result.scalars().all())
 
@@ -99,11 +84,16 @@ async def unregister_device_token(
 
 # ─── Browse-alert (notification when new order matches filter) ─
 
+class _AlertLocation(BaseModel):
+    apartment_id: uuid.UUID
+    building: str | None = None
+    floor: int | None = None
+
+
 class _BrowseAlertBody(BaseModel):
     enabled: bool
-    apartment_ids: list[str] = []
-    building_keys: list[str] = []
-    floors: list[int] = []
+    min_gold: float | None = None
+    locations: list[_AlertLocation] = []
 
 
 @router.get("/me/browse-alert")
@@ -111,14 +101,22 @@ async def get_browse_alert(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user),
 ):
-    alert = await db.get(ShipperAlert, user.id)
+    alert = await db.scalar(
+        select(ShipperAlert).where(ShipperAlert.user_id == user.id)
+    )
     if alert is None:
-        return {"enabled": False, "apartment_ids": [], "building_keys": [], "floors": []}
+        return {"enabled": False, "min_gold": None, "locations": []}
     return {
         "enabled": alert.enabled,
-        "apartment_ids": alert.apartment_ids or [],
-        "building_keys": alert.building_keys or [],
-        "floors": alert.floors or [],
+        "min_gold": float(alert.min_gold) if alert.min_gold is not None else None,
+        "locations": [
+            {
+                "apartment_id": str(loc.apartment_id),
+                "building": loc.building,
+                "floor": loc.floor,
+            }
+            for loc in (alert.locations or [])
+        ],
     }
 
 
@@ -129,24 +127,35 @@ async def update_browse_alert(
     user: User = Depends(current_user),
 ):
     from sqlalchemy.dialects.postgresql import insert as pg_insert
-    stmt = (
+
+    # Upsert ShipperAlert (global settings)
+    await db.execute(
         pg_insert(ShipperAlert)
-        .values(
-            user_id=user.id,
-            enabled=body.enabled,
-            apartment_ids=body.apartment_ids,
-            building_keys=body.building_keys,
-            floors=body.floors,
-        )
+        .values(user_id=user.id, enabled=body.enabled, min_gold=body.min_gold)
         .on_conflict_do_update(
             index_elements=["user_id"],
             set_={
                 "enabled": body.enabled,
-                "apartment_ids": body.apartment_ids,
-                "building_keys": body.building_keys,
-                "floors": body.floors,
+                "min_gold": body.min_gold,
                 "updated_at": text("NOW()"),
             },
         )
     )
-    await db.execute(stmt)
+
+    # Replace all location rows for this user
+    await db.execute(
+        delete(ShipperAlertLocation).where(ShipperAlertLocation.user_id == user.id)
+    )
+    if body.locations:
+        await db.execute(
+            pg_insert(ShipperAlertLocation).values([
+                {
+                    "id": uuid.uuid4(),
+                    "user_id": user.id,
+                    "apartment_id": loc.apartment_id,
+                    "building": loc.building,
+                    "floor": loc.floor,
+                }
+                for loc in body.locations
+            ]).on_conflict_do_nothing()
+        )

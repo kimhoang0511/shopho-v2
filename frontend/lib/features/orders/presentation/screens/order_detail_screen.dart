@@ -2,7 +2,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:saver_gallery/saver_gallery.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -44,6 +49,11 @@ final _currentUserIdProvider = FutureProvider.autoDispose<String?>((ref) async {
   return storage.read(key: 'user_id');
 });
 
+final _myOrderSlotsProvider = FutureProvider.autoDispose<int>((ref) async {
+  final res = await ref.read(apiClientProvider).dio.get('/users/me');
+  return (res.data['order_slots'] as int?) ?? 0;
+});
+
 final _proposalsProvider = FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
   (ref, orderId) => ref.read(ordersRepositoryProvider).fetchProposals(orderId),
 );
@@ -75,7 +85,7 @@ class OrderDetailScreen extends ConsumerWidget {
       }
       showContact = (isCreatorUser || isShipperUser) &&
           (_loadedOrder.status == OrderStatus.accepted ||
-           _loadedOrder.status == OrderStatus.delivering);
+           _loadedOrder.status == OrderStatus.completed);
     }
 
     return Scaffold(
@@ -235,8 +245,6 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   bool _delivering = false;
   bool _shipperCancelling = false;
   bool _completing = false;
-  bool _reducingGold = false;
-  bool _disputing = false;
   bool _proposing = false;
   bool _renewing = false;
 
@@ -267,7 +275,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Đã nhận đơn! Gold sẽ được cộng sau khi người đặt xác nhận hoặc chờ trong 1 giờ.'),
+            content: Text('Đã nhận đơn!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -298,7 +306,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         title: const Text('Huỷ đơn đã được nhận'),
         content: const Text(
           '⚠️ Lưu ý: Hãy liên hệ với người nhận đơn trước khi thực hiện huỷ để tránh gây bất tiện.\n\n'
-          'Bạn có chắc chắn muốn huỷ đơn này không?\nGold khoá sẽ được hoàn trả lại cho bạn.',
+          'Bạn có chắc chắn muốn huỷ đơn này không?\nTiền khoá sẽ được hoàn trả lại cho bạn.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Quay lại')),
@@ -316,7 +324,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       await ref.read(ordersRepositoryProvider).cancelOrder(widget.order.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đã huỷ đơn. Gold đã được hoàn trả.'), backgroundColor: Colors.orange),
+          const SnackBar(content: Text('Đã huỷ đơn.'), backgroundColor: Colors.orange),
         );
         _safeBack();
       }
@@ -333,7 +341,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Huỷ đơn'),
-        content: const Text('Bạn có chắc muốn huỷ đơn này không?\nGold đã khoá sẽ được hoàn trả lại.'),
+        content: const Text('Bạn có chắc muốn huỷ đơn này không?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Không')),
           FilledButton(
@@ -367,7 +375,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Đặt lại đơn'),
-        content: const Text('Đơn sẽ được kích hoạt lại với cùng nội dung và thời hạn ban đầu.\nGold sẽ được khoá lại từ số dư của bạn.'),
+        content: const Text('Đơn sẽ được kích hoạt lại với cùng nội dung và thời hạn ban đầu.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Huỷ')),
           FilledButton(
@@ -413,7 +421,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đơn hoàn thành! Gold đã được chuyển cho người ship.'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Đơn hoàn thành!'), backgroundColor: Colors.green),
         );
         _safeBack();
       }
@@ -428,125 +436,73 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   }
 
   Future<void> _confirmDelivery() async {
-    final acceptedAt = widget.order.acceptedAt;
-    if (acceptedAt != null && DateTime.now().difference(acceptedAt).inMinutes < 5) {
-      final remaining = 5 - DateTime.now().difference(acceptedAt).inMinutes;
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Vui lòng chờ thêm khoảng $remaining phút trước khi xác nhận hoàn thành.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    final adjustedGold = await showDialog<double>(
-      context: context,
-      builder: (_) => _DeliveryConfirmDialog(originalGold: widget.order.goldReward),
-    );
-    if (adjustedGold == null) return;
-
-    setState(() => _delivering = true);
+    Map<String, dynamic>? me;
     try {
-      await ref.read(ordersRepositoryProvider).deliverOrder(
-        widget.order.id,
-        adjustedGold: adjustedGold != widget.order.goldReward ? adjustedGold : null,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đã xác nhận giao hàng! Chờ người đặt xác nhận.'), backgroundColor: Colors.blue),
-        );
-        _safeBack();
-      }
-    } on DioException catch (e) {
-      final msg = extractApiError(e, 'Thao tác thất bại');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString()), backgroundColor: Colors.red));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xảy ra lỗi, vui lòng thử lại'), backgroundColor: Colors.red));
-    } finally {
-      if (mounted) setState(() => _delivering = false);
-    }
-  }
+      final res = await ref.read(apiClientProvider).dio.get('/users/me');
+      me = res.data as Map<String, dynamic>;
+    } catch (_) {}
 
-  Future<void> _disputeOrder() async {
-    final total = widget.order.goldReward.toInt();
-    final shipperGold = total ~/ 2;
-    final creatorGold = total - shipperGold;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Xác nhận xung đột'),
-        content: Text(
-          'Đang có xung đột giữa 2 bên.\n\n'
-          'Bạn nên chủ động liên hệ với người mua/ship hộ để giải quyết trước.\n\n'
-          'Nếu không thể giải quyết và xác nhận trạng thái "xung đột", '
-          'người mua/ship hộ sẽ nhận $shipperGold Gold, '
-          'bạn sẽ được hoàn lại $creatorGold Gold.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Quay lại giải quyết')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Xác nhận xung đột'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+    if (!mounted) return;
 
-    setState(() => _disputing = true);
-    try {
-      await ref.read(ordersRepositoryProvider).disputeOrder(widget.order.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Đã xác nhận xung đột. Gold được chia đôi giữa hai bên.'),
-            backgroundColor: Colors.deepOrange,
-          ),
-        );
-        _safeBack();
-      }
-    } on DioException catch (e) {
-      final msg = extractApiError(e, 'Thao tác thất bại');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString()), backgroundColor: Colors.red));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xảy ra lỗi, vui lòng thử lại'), backgroundColor: Colors.red));
-    } finally {
-      if (mounted) setState(() => _disputing = false);
-    }
-  }
-
-  Future<void> _reduceGold() async {
-    final newGold = await showDialog<double>(
+    final result = await showDialog<_DeliveryResult>(
       context: context,
       builder: (_) => _DeliveryConfirmDialog(
-        originalGold: widget.order.goldReward,
-        title: 'Giảm giá gold',
-        subtitle: 'Bạn có thể giảm số gold nhận được.\nPhần chênh lệch sẽ được hoàn trả cho người đặt.',
-        confirmLabel: 'Xác nhận giảm',
+        shipGold: widget.order.goldReward,
+        bankCode: me?['bank_code'] as String?,
+        bankAccountNumber: me?['bank_account_number'] as String?,
+        bankAccountName: me?['bank_account_name'] as String?,
+        onNoBankInfo: () {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.account_balance_outlined, color: Colors.white, size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Bạn chưa có thông tin ngân hàng. Hãy cài đặt trong hồ sơ để nhận chuyển khoản.',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange.shade700,
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+          context.push('/profile');
+        },
+        onDeliver: (totalGold) => ref.read(ordersRepositoryProvider).deliverOrder(
+          widget.order.id,
+          totalGold: totalGold,
+        ),
       ),
     );
-    if (newGold == null) return;
+    if (result == null) return;
 
-    setState(() => _reducingGold = true);
-    try {
-      await ref.read(ordersRepositoryProvider).reduceGold(widget.order.id, newGold);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đã cập nhật gold thưởng: ${newGold.toStringAsFixed(0)} Gold'), backgroundColor: Colors.blue),
+    if (!result.apiCalled) {
+      setState(() => _delivering = true);
+      try {
+        await ref.read(ordersRepositoryProvider).deliverOrder(
+          widget.order.id,
+          totalGold: result.totalGold,
         );
-        _safeBack();
+      } on DioException catch (e) {
+        final msg = extractApiError(e, 'Thao tác thất bại');
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString()), backgroundColor: Colors.red));
+        return;
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xảy ra lỗi, vui lòng thử lại'), backgroundColor: Colors.red));
+        return;
+      } finally {
+        if (mounted) setState(() => _delivering = false);
       }
-    } on DioException catch (e) {
-      final msg = extractApiError(e, 'Thao tác thất bại');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString()), backgroundColor: Colors.red));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xảy ra lỗi, vui lòng thử lại'), backgroundColor: Colors.red));
-    } finally {
-      if (mounted) setState(() => _reducingGold = false);
     }
+
+    if (mounted) _safeBack();
   }
 
   Future<void> _shipperCancel() async {
@@ -554,7 +510,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Huỷ đơn đã nhận'),
-        content: const Text('Bạn có chắc muốn huỷ đơn này không?\nGold sẽ được hoàn trả lại cho người đặt.'),
+        content: const Text('Bạn có chắc muốn huỷ đơn này không?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Không')),
           FilledButton(
@@ -576,7 +532,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           SnackBar(
             content: Text(reopened
                 ? 'Đã huỷ nhận đơn. Đơn được mở lại để shipper khác có thể nhận.'
-                : 'Đã huỷ đơn. Gold hoàn trả cho người đặt.'),
+                : 'Đã huỷ đơn. Tiền hoàn trả cho người đặt.'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -605,7 +561,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã gửi đề nghị ${proposed.toStringAsFixed(0)} Gold'),
+            content: Text('Đã gửi đề nghị ${proposed.toStringAsFixed(0)}K'),
             backgroundColor: Colors.green,
           ),
         );
@@ -626,9 +582,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     final cs = Theme.of(context).colorScheme;
     final isPending = order.status == OrderStatus.pending;
     final isAccepted = order.status == OrderStatus.accepted;
-    final isDelivering = order.status == OrderStatus.delivering;
+
     final isExpired = order.status == OrderStatus.expired;
     final currentUserId = ref.watch(_currentUserIdProvider).valueOrNull;
+    final orderSlots = ref.watch(_myOrderSlotsProvider).valueOrNull;
+    final hasSlots = orderSlots == null || orderSlots > 0;
     final isShipper = currentUserId != null && order.shipperId == currentUserId;
     final isCreator = currentUserId != null && order.creatorId == currentUserId;
     final canCreatorCancelAccepted = isCreator &&
@@ -686,20 +644,61 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      _InfoRow(Icons.monetization_on_outlined, 'Trả gold ship',
-                          '${order.goldReward.toStringAsFixed(0)} Gold',
+                      _InfoRow(Icons.monetization_on_outlined, 'Trả tiền mua/ship hộ',
+                          '${order.goldReward.toStringAsFixed(0)}K',
                           valueStyle: TextStyle(color: cs.tertiary, fontWeight: FontWeight.bold, fontSize: 18)),
                       const Divider(height: 24),
-                      if (order.status != OrderStatus.delivering && order.status != OrderStatus.completed) ...[
+                      if (order.status != OrderStatus.completed) ...[
                         _timerRow(order, cs),
                         const Divider(height: 24),
                       ],
-                      if (order.status == OrderStatus.delivering && order.deliveringAt != null) ...[
-                        _InfoRow(
-                          Icons.schedule_outlined,
-                          'Gold tự động chuyển lúc',
-                          _formatTime(order.deliveringAt!.add(const Duration(hours: 1)).toLocal()),
-                          valueStyle: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                      if (isCreator && order.status == OrderStatus.completed && (order.totalGold ?? 0) > 0) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF4E8),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Tổng chi trả', style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Tiền mua hàng', style: TextStyle(fontSize: 13)),
+                                  Text(
+                                    '${(order.totalGold! - order.goldReward).toStringAsFixed(0)}K',
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 12),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('tiền công mua/ship', style: TextStyle(fontSize: 13)),
+                                  Text(
+                                    '${order.goldReward.toStringAsFixed(0)}K',
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 12),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Tổng cộng', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                  Text(
+                                    '${order.totalGold!.toStringAsFixed(0)}K',
+                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: cs.tertiary),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                         const Divider(height: 24),
                       ],
@@ -710,10 +709,19 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                 ),
               ),
 
-              // Dispute result card
-              if (order.status == OrderStatus.disputed) ...[
+              // Bank info + QR (creator, completed, shipper has bank info)
+              if (isCreator &&
+                  order.status == OrderStatus.completed &&
+                  (order.totalGold ?? 0) > 0 &&
+                  order.shipper?.bankCode != null &&
+                  order.shipper!.bankCode!.isNotEmpty &&
+                  order.shipper?.bankAccountNumber != null &&
+                  order.shipper!.bankAccountNumber!.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                _DisputeResultCard(goldReward: order.goldReward, isCreator: isCreator),
+                _ShipperBankCard(
+                  shipper: order.shipper!,
+                  totalGold: order.totalGold!,
+                ),
               ],
 
               // Proposals card (creator, pending)
@@ -740,12 +748,38 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           ),
         ),
 
+        // No-slots warning (shipper, pending)
+        if (isPending && !isCreator && orderSlots != null && orderSlots <= 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.block_rounded, size: 18, color: Colors.red.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bạn đã hết lượt. Vui lòng nạp thêm lượt để nhận đơn hoặc đề nghị tăng tiền.',
+                      style: TextStyle(fontSize: 13, color: Colors.red.shade700, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
         // Shipper: accept button (pending, not creator)
         if (isPending && !isCreator)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: FilledButton.icon(
-              onPressed: _accepting ? null : _acceptOrder,
+              onPressed: (_accepting || !hasSlots) ? null : _acceptOrder,
               icon: _accepting
                   ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.check_circle_outline),
@@ -762,11 +796,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: OutlinedButton.icon(
-              onPressed: _proposing ? null : _proposeGold,
+              onPressed: (_proposing || !hasSlots) ? null : _proposeGold,
               icon: _proposing
                   ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.trending_up_rounded, size: 18),
-              label: Text(_proposing ? 'Đang gửi...' : 'Đề nghị tăng gold'),
+              label: Text(_proposing ? 'Đang gửi...' : (!hasSlots ? 'Hết lượt' : 'Đề nghị tăng tiền công')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF8B6000),
                 side: const BorderSide(color: Color(0xFFD4A017)),
@@ -821,40 +855,6 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
           ),
 
-        // Creator: confirm completion (accepted or delivering)
-        if (isCreator && (isAccepted || isDelivering))
-          Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, isDelivering ? 8 : 24),
-            child: FilledButton.icon(
-              onPressed: _completing ? null : _completeOrder,
-              icon: _completing
-                  ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.verified_outlined),
-              label: Text(_completing ? 'Đang xử lý...' : 'Xác nhận đã nhận hàng'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.green,
-                minimumSize: const Size(double.infinity, 48),
-              ),
-            ),
-          ),
-
-        // Creator: dispute (only when delivering)
-        if (isCreator && isDelivering)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: OutlinedButton.icon(
-              onPressed: _disputing ? null : _disputeOrder,
-              icon: _disputing
-                  ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.report_problem_outlined, size: 18),
-              label: Text(_disputing ? 'Đang xử lý...' : 'Vẫn chưa hoàn thành'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.deepOrange,
-                side: const BorderSide(color: Colors.deepOrange),
-                minimumSize: const Size(double.infinity, 48),
-              ),
-            ),
-          ),
 
         // Creator: renew expired order
         if (isCreator && isExpired)
@@ -872,42 +872,31 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
           ),
 
-        // Shipper actions (accepted or delivering)
-        if (isShipper && (isAccepted || isDelivering))
+        // Shipper actions (accepted)
+        if (isShipper && isAccepted)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: Row(
               children: [
                 Expanded(
-                  child: isDelivering
-                      ? OutlinedButton.icon(
-                          onPressed: _reducingGold ? null : _reduceGold,
-                          icon: _reducingGold
-                              ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.remove_circle_outline, size: 18),
-                          label: const Text('Giảm giá gold'),
-                          style: OutlinedButton.styleFrom(foregroundColor: Colors.orange, side: const BorderSide(color: Colors.orange)),
-                        )
-                      : OutlinedButton.icon(
-                          onPressed: _shipperCancelling ? null : _shipperCancel,
-                          icon: _shipperCancelling
-                              ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.cancel_outlined, size: 18),
-                          label: const Text('Huỷ đơn'),
-                          style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Colors.red)),
-                        ),
+                  child: OutlinedButton.icon(
+                    onPressed: _shipperCancelling ? null : _shipperCancel,
+                    icon: _shipperCancelling
+                        ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.cancel_outlined, size: 18),
+                    label: const Text('Huỷ đơn'),
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Colors.red)),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: (isDelivering || _delivering) ? null : _confirmDelivery,
+                    onPressed: _delivering ? null : _confirmDelivery,
                     icon: _delivering
                         ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.check_circle_outline, size: 18),
-                    label: Text(isDelivering ? 'Chờ xác nhận' : 'Báo đã giao hàng'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: isDelivering ? Colors.grey : Colors.blue,
-                    ),
+                    label: Text(_delivering ? 'Đang xử lý...' : 'Xác nhận giao hàng'),
+                    style: FilledButton.styleFrom(backgroundColor: Colors.blue),
                   ),
                 ),
               ],
@@ -955,21 +944,17 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   String _statusLabel(OrderStatus s) => switch (s) {
     OrderStatus.pending    => 'Đang chờ',
     OrderStatus.accepted   => 'Đã nhận - đang xử lý',
-    OrderStatus.delivering => 'Đã báo giao',
     OrderStatus.completed  => 'hoàn thành',
     OrderStatus.cancelled  => 'Đã huỷ',
     OrderStatus.expired    => 'Hết hạn',
-    OrderStatus.disputed   => 'Xung đột',
   };
 
   Color _statusColor(OrderStatus s) => switch (s) {
     OrderStatus.pending    => Colors.orange,
     OrderStatus.accepted   => Colors.blue,
-    OrderStatus.delivering => Colors.teal,
     OrderStatus.completed  => Colors.green,
     OrderStatus.cancelled  => Colors.red,
     OrderStatus.expired    => Colors.grey,
-    OrderStatus.disputed   => Colors.deepOrange,
   };
 }
 
@@ -1153,29 +1138,29 @@ class _CompleteOrderDialogState extends State<_CompleteOrderDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Gold sẽ được chuyển cho người ship ngay lập tức.'),
+            const Text('Tiền sẽ được chuyển cho người ship ngay lập tức.'),
             const SizedBox(height: 16),
             TextFormField(
               controller: _ctrl,
               keyboardType: TextInputType.number,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                labelText: 'Tổng gold thưởng',
-                suffixText: 'Gold',
+                labelText: 'Tổng tiền thưởng',
+                suffixText: 'K',
                 prefixIcon: const Icon(Icons.monetization_on_outlined),
-                helperText: 'Gốc: ${widget.originalGold.toStringAsFixed(0)} Gold · Chỉ được tăng thêm',
+                helperText: 'Gốc: ${widget.originalGold.toStringAsFixed(0)}K · Chỉ được tăng thêm',
               ),
               validator: (v) {
                 final n = double.tryParse(v?.trim() ?? '');
                 if (n == null) return 'Vui lòng nhập số hợp lệ';
-                if (n < widget.originalGold) return 'Không được thấp hơn ${widget.originalGold.toStringAsFixed(0)} Gold';
+                if (n < widget.originalGold) return 'Không được thấp hơn ${widget.originalGold.toStringAsFixed(0)}K';
                 return null;
               },
             ),
             if (_bonus > 0) ...[
               const SizedBox(height: 8),
               Text(
-                'Thưởng thêm: +${_bonus.toStringAsFixed(0)} Gold',
+                'Thưởng thêm: +${_bonus.toStringAsFixed(0)}K',
                 style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
               ),
             ],
@@ -1200,17 +1185,27 @@ class _CompleteOrderDialogState extends State<_CompleteOrderDialog> {
 
 // ─── Delivery confirm dialog ─────────────────────────────────
 
+class _DeliveryResult {
+  final double totalGold;
+  final bool apiCalled;
+  const _DeliveryResult(this.totalGold, {this.apiCalled = false});
+}
+
 class _DeliveryConfirmDialog extends StatefulWidget {
-  final double originalGold;
-  final String title;
-  final String subtitle;
-  final String confirmLabel;
+  final double shipGold;
+  final String? bankCode;
+  final String? bankAccountNumber;
+  final String? bankAccountName;
+  final VoidCallback? onNoBankInfo;
+  final Future<void> Function(double totalGold)? onDeliver;
 
   const _DeliveryConfirmDialog({
-    required this.originalGold,
-    this.title = 'Xác nhận đã giao hàng',
-    this.subtitle = 'Gold sẽ được cộng sau khi người đặt xác nhận hoặc chờ trong 1 giờ.',
-    this.confirmLabel = 'Xác nhận đã giao',
+    required this.shipGold,
+    this.bankCode,
+    this.bankAccountNumber,
+    this.bankAccountName,
+    this.onNoBankInfo,
+    this.onDeliver,
   });
 
   @override
@@ -1219,13 +1214,13 @@ class _DeliveryConfirmDialog extends StatefulWidget {
 
 class _DeliveryConfirmDialogState extends State<_DeliveryConfirmDialog> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _ctrl;
+  final _ctrl = TextEditingController();
+  double? _buyGold;
+  bool _showQr = false;
+  bool _loading = false;
+  String? _apiError;
 
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = TextEditingController(text: widget.originalGold.toStringAsFixed(0));
-  }
+  double get _total => (_buyGold ?? 0) + widget.shipGold;
 
   @override
   void dispose() {
@@ -1233,48 +1228,223 @@ class _DeliveryConfirmDialogState extends State<_DeliveryConfirmDialog> {
     super.dispose();
   }
 
+  void _onChanged(String v) {
+    final n = double.tryParse(v.trim());
+    setState(() => _buyGold = n);
+  }
+
+  bool get _hasBankInfo =>
+      widget.bankCode != null &&
+      widget.bankCode!.isNotEmpty &&
+      widget.bankAccountNumber != null &&
+      widget.bankAccountNumber!.isNotEmpty;
+
+  String get _qrUrl {
+    final amount = (_total * 1000).round();
+    return 'https://img.vietqr.io/image/${widget.bankCode}-${widget.bankAccountNumber}-compact2.jpg?amount=$amount&addInfo=Mua%20ship%20ho';
+  }
+
+  String _formatVnd(double gold) {
+    final vnd = (gold * 1000).round();
+    return vnd.toString().replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]}.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.title),
-      content: Form(
-        key: _formKey,
-        autovalidateMode: AutovalidateMode.onUnfocus,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.subtitle),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _ctrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Điều chỉnh giảm gold không?',
-                suffixText: 'Gold',
-                prefixIcon: const Icon(Icons.monetization_on_outlined),
-                helperText: 'Tối đa ${widget.originalGold.toStringAsFixed(0)} Gold · Tối thiểu 2 Gold',
+      title: Text(_showQr ? 'Chuyển khoản' : 'Xác nhận đã giao hàng'),
+      content: _showQr ? _buildQrView() : _buildFormView(),
+      actions: _showQr ? _buildQrActions() : _buildFormActions(context),
+    );
+  }
+
+  Widget _buildFormView() {
+    return Form(
+      key: _formKey,
+      autovalidateMode: AutovalidateMode.onUnfocus,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Nhập số tiền đã mua hàng (chưa bao gồm tiền công mua/ship)'),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _ctrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: _onChanged,
+            decoration: InputDecoration(
+              labelText: 'Tiền mua hàng',
+              suffixText: 'K',
+              prefixIcon: const Icon(Icons.shopping_bag_outlined),
+              helperText: _buyGold != null && _buyGold! >= 0
+                  ? '= ${_formatVnd(_buyGold!)} đ'
+                  : null,
+            ),
+            validator: (v) {
+              final n = double.tryParse(v?.trim() ?? '');
+              if (n == null || n < 0) return 'Vui lòng nhập số hợp lệ (≥ 0)';
+              return null;
+            },
+          ),
+          if (_buyGold != null && _buyGold! >= 0) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF0FF),
+                borderRadius: BorderRadius.circular(10),
               ),
-              validator: (v) {
-                final n = double.tryParse(v?.trim() ?? '');
-                if (n == null) return 'Vui lòng nhập số hợp lệ';
-                if (n < 2) return 'Tối thiểu 2 Gold';
-                if (n > widget.originalGold) return 'Không được vượt quá ${widget.originalGold.toStringAsFixed(0)} Gold';
-                return null;
-              },
+              child: Column(
+                children: [
+                  _GoldRow(label: 'Tiền mua hàng', value: _buyGold!, color: Colors.indigo),
+                  const Divider(height: 12),
+                  _GoldRow(label: 'tiền công mua/ship', value: widget.shipGold, color: const Color(0xFF5B6AF0)),
+                  const Divider(height: 12),
+                  _GoldRow(label: 'Tổng cộng', value: _total, color: Colors.orange.shade800),
+                ],
+              ),
+            ),
+          ],
+          if (_apiError != null) ...[
+            const SizedBox(height: 8),
+            Text(_apiError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48), shape: const StadiumBorder()),
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+                      Navigator.pop(context, _DeliveryResult(_total));
+                    }
+                  },
+                  child: const Text('Tiền mặt'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48), shape: const StadiumBorder()),
+                  onPressed: _loading ? null : () async {
+                    if (!_formKey.currentState!.validate()) return;
+                    if (!_hasBankInfo) {
+                      Navigator.pop(context);
+                      widget.onNoBankInfo?.call();
+                      return;
+                    }
+                    setState(() { _loading = true; _apiError = null; });
+                    try {
+                      await widget.onDeliver?.call(_total);
+                      if (mounted) setState(() { _loading = false; _showQr = true; });
+                    } on DioException catch (e) {
+                      final msg = extractApiError(e, 'Xác nhận thất bại');
+                      if (mounted) setState(() { _loading = false; _apiError = msg.toString(); });
+                    } catch (_) {
+                      if (mounted) setState(() { _loading = false; _apiError = 'Đã xảy ra lỗi, vui lòng thử lại'; });
+                    }
+                  },
+                  child: _loading
+                      ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Chuyển khoản'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQrView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.account_balance_outlined, size: 16, color: Colors.grey),
+            const SizedBox(width: 6),
+            Text(
+              '${widget.bankCode} · ${widget.bankAccountNumber}',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
           ],
         ),
+        if (widget.bankAccountName != null && widget.bankAccountName!.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            widget.bankAccountName!,
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+        ],
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.network(
+            _qrUrl,
+            width: 240,
+            loadingBuilder: (_, child, progress) => progress == null
+                ? child
+                : const SizedBox(
+                    height: 240,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+            errorBuilder: (_, __, ___) => Container(
+              height: 180,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text('Không thể tải mã QR', style: TextStyle(color: Colors.grey)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Số tiền: ${_formatVnd(_total)} VNĐ',
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildFormActions(BuildContext context) {
+    return [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Huỷ')),
+    ];
+  }
+
+  List<Widget> _buildQrActions() {
+    return [
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _DeliveryResult(_total, apiCalled: true)),
+        child: const Text('Đóng'),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Huỷ')),
-        FilledButton(
-          onPressed: () {
-            if (_formKey.currentState!.validate()) {
-              Navigator.pop(context, double.parse(_ctrl.text.trim()));
-            }
-          },
-          child: Text(widget.confirmLabel),
+    ];
+  }
+}
+
+class _GoldRow extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+  const _GoldRow({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w500)),
+        Text(
+          '${value.toStringAsFixed(0)}K',
+          style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -1341,7 +1511,7 @@ class _AcceptOrderDialogState extends State<_AcceptOrderDialog> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Bạn sẽ nhận được ${widget.order.goldReward.toStringAsFixed(0)} Gold.',
+              'Bạn sẽ nhận được ${widget.order.goldReward.toStringAsFixed(0)}K.',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
@@ -1432,7 +1602,7 @@ class _ProposeGoldDialogState extends State<_ProposeGoldDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Đề nghị tăng gold'),
+      title: const Text('Đề nghị tăng tiền công'),
       content: Form(
         key: _formKey,
         child: Column(
@@ -1440,7 +1610,7 @@ class _ProposeGoldDialogState extends State<_ProposeGoldDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Mức hiện tại: ${widget.currentGold.toStringAsFixed(0)} Gold',
+              'Mức hiện tại: ${widget.currentGold.toStringAsFixed(0)}K',
               style: const TextStyle(color: Colors.grey, fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -1450,13 +1620,13 @@ class _ProposeGoldDialogState extends State<_ProposeGoldDialog> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
                 labelText: 'Mức đề nghị',
-                suffixText: 'Gold',
+                suffixText: 'K',
                 prefixIcon: Icon(Icons.trending_up_rounded),
               ),
               validator: (v) {
                 final n = double.tryParse(v ?? '');
                 if (n == null) return 'Vui lòng nhập số hợp lệ';
-                if (n <= widget.currentGold) return 'Phải cao hơn ${widget.currentGold.toStringAsFixed(0)} Gold';
+                if (n <= widget.currentGold) return 'Phải cao hơn ${widget.currentGold.toStringAsFixed(0)}K';
                 return null;
               },
             ),
@@ -1516,7 +1686,7 @@ class _ProposalsCard extends StatelessWidget {
                     const Icon(Icons.trending_up_rounded, size: 16, color: Color(0xFF8B6000)),
                     const SizedBox(width: 6),
                     Text(
-                      'Đề nghị tăng gold (${proposals.length})',
+                      'Đề nghị tăng tiền (${proposals.length})',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -1541,14 +1711,14 @@ class _ProposalsCard extends StatelessWidget {
                   ),
                   title: Text(proposerName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                   subtitle: Text(
-                    '+${diff.toStringAsFixed(0)} Gold so với hiện tại',
+                    '+${diff.toStringAsFixed(0)} K so với hiện tại',
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '${proposedGold.toStringAsFixed(0)} Gold',
+                        '${proposedGold.toStringAsFixed(0)}K',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF8B6000),
@@ -1579,46 +1749,137 @@ class _ProposalsCard extends StatelessWidget {
   }
 }
 
-// ─── Call option tile ─────────────────────────────────────────
+// ─── Shipper bank card (creator view, completed) ─────────────
 
-class _DisputeResultCard extends StatelessWidget {
-  final double goldReward;
-  final bool isCreator;
+class _ShipperBankCard extends StatelessWidget {
+  final OrderUserInfo shipper;
+  final double totalGold;
+  const _ShipperBankCard({required this.shipper, required this.totalGold});
 
-  const _DisputeResultCard({required this.goldReward, required this.isCreator});
+  String get _qrUrl {
+    final amount = (totalGold * 1000).round();
+    return 'https://img.vietqr.io/image/${shipper.bankCode}-${shipper.bankAccountNumber}-compact2.jpg?amount=$amount&addInfo=Mua%20ship%20ho';
+  }
+
+  void _copy(BuildContext context, String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Đã sao chép'), duration: Duration(seconds: 1)),
+    );
+  }
+
+  Future<void> _downloadQr(BuildContext context) async {
+    if (Platform.isIOS) {
+      final status = await Permission.photos.request();
+      if (!status.isGranted) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cần quyền truy cập ảnh để lưu'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
+    } else {
+      // Android <10 cần WRITE_EXTERNAL_STORAGE; >=10 dùng MediaStore không cần permission
+      await Permission.storage.request();
+    }
+
+    try {
+      final response = await Dio().get<List<int>>(
+        _qrUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final bytes = Uint8List.fromList(response.data!);
+      final result = await SaverGallery.saveImage(
+        bytes,
+        quality: 100,
+        fileName: 'qr_payment_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        androidRelativePath: 'Pictures/Shopho',
+        skipIfExists: false,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.isSuccess ? 'Đã lưu ảnh QR' : 'Không thể lưu ảnh'),
+            backgroundColor: result.isSuccess ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không thể tải ảnh QR'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final total = goldReward.toInt();
-    final shipperGold = total ~/ 2;
-    final creatorGold = total - shipperGold;
-
     return Card(
-      color: Colors.deepOrange.shade50,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.balance_outlined, color: Colors.deepOrange, size: 18),
-                const SizedBox(width: 8),
-                const Text('Kết quả xung đột',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
-              ],
-            ),
+            const Text('Thanh toán chuyển khoản',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 13)),
             const SizedBox(height: 12),
-            _DisputeRow(
-              label: 'Người tạo đơn nhận lại',
-              gold: creatorGold,
-              highlight: isCreator,
+            _BankInfoRow(
+              label: 'Ngân hàng',
+              value: shipper.bankCode!,
+              onCopy: () => _copy(context, shipper.bankCode!),
             ),
-            const SizedBox(height: 8),
-            _DisputeRow(
-              label: 'Người ship nhận',
-              gold: shipperGold,
-              highlight: !isCreator,
+            const Divider(height: 16),
+            _BankInfoRow(
+              label: 'Số tài khoản',
+              value: shipper.bankAccountNumber!,
+              onCopy: () => _copy(context, shipper.bankAccountNumber!),
+            ),
+            if (shipper.bankAccountName != null && shipper.bankAccountName!.isNotEmpty) ...[
+              const Divider(height: 16),
+              _BankInfoRow(
+                label: 'Chủ tài khoản',
+                value: shipper.bankAccountName!,
+                onCopy: () => _copy(context, shipper.bankAccountName!),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  _qrUrl,
+                  width: 220,
+                  loadingBuilder: (_, child, progress) => progress == null
+                      ? child
+                      : const SizedBox(
+                          height: 220,
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 160,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text('Không thể tải mã QR', style: TextStyle(color: Colors.grey)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Center(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.download_outlined, size: 16),
+                label: const Text('Tải ảnh QR'),
+                onPressed: () => _downloadQr(context),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 13),
+                ),
+              ),
             ),
           ],
         ),
@@ -1627,39 +1888,33 @@ class _DisputeResultCard extends StatelessWidget {
   }
 }
 
-class _DisputeRow extends StatelessWidget {
+class _BankInfoRow extends StatelessWidget {
   final String label;
-  final int gold;
-  final bool highlight;
-
-  const _DisputeRow({required this.label, required this.gold, required this.highlight});
+  final String value;
+  final VoidCallback onCopy;
+  const _BankInfoRow({required this.label, required this.value, required this.onCopy});
 
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-        Row(
-          children: [
-            Text(
-              '$gold Gold',
-              style: TextStyle(
-                fontWeight: highlight ? FontWeight.bold : FontWeight.normal,
-                fontSize: highlight ? 15 : 13,
-                color: highlight ? Colors.deepOrange : Colors.grey.shade600,
-              ),
-            ),
-            if (highlight) ...[
-              const SizedBox(width: 4),
-              const Text('← bạn', style: TextStyle(fontSize: 11, color: Colors.deepOrange)),
-            ],
-          ],
+        SizedBox(
+          width: 110,
+          child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+        ),
+        Expanded(
+          child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        ),
+        GestureDetector(
+          onTap: onCopy,
+          child: const Icon(Icons.copy_outlined, size: 18, color: Colors.grey),
         ),
       ],
     );
   }
 }
+
+// ─── Call option tile ─────────────────────────────────────────
 
 class _CallOptionTile extends StatelessWidget {
   final IconData icon;

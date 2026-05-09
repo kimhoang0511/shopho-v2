@@ -126,7 +126,7 @@ class _CreatedTabState extends ConsumerState<_CreatedTab> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Huỷ đơn'),
-        content: const Text('Bạn có chắc muốn huỷ đơn này không?\nGold đã khoá sẽ được hoàn trả lại.'),
+        content: const Text('Bạn có chắc muốn huỷ đơn này không?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -217,7 +217,6 @@ class _MyShippedOrdersScreenState extends ConsumerState<MyShippedOrdersScreen> {
   static const _filters = <(String, OrderStatus?)>[
     ('Tất cả',   null),
     ('Đang xử lý đơn',  OrderStatus.accepted),
-    ('Đã báo giao', OrderStatus.delivering),
     ('hoàn thành', OrderStatus.completed),
     ('Đã huỷ',   OrderStatus.cancelled),
   ];
@@ -501,11 +500,9 @@ class _StatusBadge extends StatelessWidget {
     final (label, color) = switch (status) {
       OrderStatus.pending    => ('Đang chờ', Colors.orange),
       OrderStatus.accepted   => ('Đang xử lý đơn', Colors.blue),
-      OrderStatus.delivering => ('Đã báo giao', Colors.teal),
       OrderStatus.completed  => ('hoàn thành', Colors.green),
       OrderStatus.cancelled  => ('Đã huỷ', Colors.red),
       OrderStatus.expired    => ('Hết hạn', Colors.grey),
-      OrderStatus.disputed   => ('Xung đột', Colors.deepOrange),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -537,7 +534,7 @@ class _GoldBadge extends StatelessWidget {
           const Icon(Icons.monetization_on_rounded, size: 12, color: Color(0xFFF5A623)),
           const SizedBox(width: 3),
           Text(
-            '${amount.toStringAsFixed(0)} Gold',
+            '${amount.toStringAsFixed(0)}K',
             style: const TextStyle(fontSize: 11, color: Color(0xFFE65100), fontWeight: FontWeight.bold),
           ),
         ],
@@ -565,7 +562,7 @@ class _ProposalGoldBadge extends StatelessWidget {
           const Icon(Icons.trending_up_rounded, size: 12, color: Color(0xFF8B6000)),
           const SizedBox(width: 3),
           Text(
-            '↑ ${minGold.toStringAsFixed(0)} Gold',
+            '↑ ${minGold.toStringAsFixed(0)}K',
             style: const TextStyle(fontSize: 11, color: Color(0xFF8B6000), fontWeight: FontWeight.bold),
           ),
         ],

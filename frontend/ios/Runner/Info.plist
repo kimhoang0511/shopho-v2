@@ -58,8 +58,23 @@
 	<string>Ứng dụng cần microphone để thực hiện cuộc gọi</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Ứng dụng cần camera để thực hiện video call</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Ứng dụng cần quyền để lưu ảnh QR vào thư viện ảnh</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.shopho.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>shopho</string>
+			</array>
+		</dict>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

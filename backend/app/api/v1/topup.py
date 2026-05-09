@@ -71,7 +71,7 @@ async def create_topup(
     user: User = Depends(current_user),
 ):
     if body.gold_amount not in GOLD_PACKAGES:
-        raise HTTPException(400, f"Gói gold hợp lệ: {GOLD_PACKAGES}")
+        raise HTTPException(400, f"Gói tiền hợp lệ: {GOLD_PACKAGES}")
 
     amount_vnd = body.gold_amount * VND_PER_GOLD
 
@@ -124,7 +124,7 @@ async def get_topup_status(
         )
     )
     if not order:
-        raise HTTPException(404, "Không tìm thấy đơn nạp gold")
+        raise HTTPException(404, "Không tìm thấy đơn nạp tiền")
 
     return TopUpStatusResponse(
         status=order.status,
@@ -176,31 +176,62 @@ async def payment_webhook(
         if transfer_amount <= 0:
             continue
 
-        # Tìm order_code dạng SHxxxxxx trong nội dung CK
-        match = re.search(r'\bSH[A-Z0-9]{6}\b', content.upper())
+        # Tìm order_code dạng SHxxxxxx (gold) hoặc SLxxxxxx (slots) trong nội dung CK
+        match = re.search(r'\bS[HL][A-Z0-9]{6}\b', content.upper())
         if not match:
             results.append({"tid": tx_id, "status": "no_order_code"})
             continue
 
         order_code = match.group(0)
 
-        order = await db.scalar(
-            select(GoldTopUpOrder).where(
-                GoldTopUpOrder.order_code == order_code,
-                GoldTopUpOrder.status == "pending",
+        if order_code.startswith("SL"):
+            # ── Slot top-up ───────────────────────────────────
+            from app.models.gold import SlotTopUpOrder
+            from sqlalchemy import update as sa_update
+
+            slot_order = await db.scalar(
+                select(SlotTopUpOrder).where(
+                    SlotTopUpOrder.order_code == order_code,
+                    SlotTopUpOrder.status == "pending",
+                )
             )
-        )
-        if not order:
-            results.append({"tid": tx_id, "status": "order_not_found_or_already_processed"})
-            continue
+            if not slot_order:
+                results.append({"tid": tx_id, "status": "order_not_found_or_already_processed"})
+                continue
 
-        if transfer_amount < order.amount_vnd:
-            results.append({"tid": tx_id, "status": "amount_mismatch"})
-            continue
+            if transfer_amount < slot_order.amount_vnd:
+                results.append({"tid": tx_id, "status": "amount_mismatch"})
+                continue
 
-        await top_up(db, order.user_id, float(order.gold_amount), tx_id or order_code)
-        order.status = "completed"
-        order.completed_at = datetime.now(timezone.utc)
-        results.append({"tid": tx_id, "status": "ok", "order_code": order_code, "gold_credited": float(order.gold_amount)})
+            from app.models.user import User as UserModel
+            await db.execute(
+                sa_update(UserModel)
+                .where(UserModel.id == slot_order.user_id)
+                .values(order_slots=UserModel.order_slots + slot_order.slots_amount)
+            )
+            slot_order.status = "completed"
+            slot_order.completed_at = datetime.now(timezone.utc)
+            results.append({"tid": tx_id, "status": "ok", "order_code": order_code, "slots_credited": slot_order.slots_amount})
+
+        else:
+            # ── Gold top-up (SH prefix) ───────────────────────
+            order = await db.scalar(
+                select(GoldTopUpOrder).where(
+                    GoldTopUpOrder.order_code == order_code,
+                    GoldTopUpOrder.status == "pending",
+                )
+            )
+            if not order:
+                results.append({"tid": tx_id, "status": "order_not_found_or_already_processed"})
+                continue
+
+            if transfer_amount < order.amount_vnd:
+                results.append({"tid": tx_id, "status": "amount_mismatch"})
+                continue
+
+            await top_up(db, order.user_id, float(order.gold_amount), tx_id or order_code)
+            order.status = "completed"
+            order.completed_at = datetime.now(timezone.utc)
+            results.append({"tid": tx_id, "status": "ok", "order_code": order_code, "gold_credited": float(order.gold_amount)})
 
     return {"error": 0, "results": results}

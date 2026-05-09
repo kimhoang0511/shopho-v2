@@ -17,6 +17,8 @@ PODS:
     - WebRTC-SDK (= 144.7559.01)
   - permission_handler_apple (9.3.0):
     - Flutter
+  - saver_gallery (0.0.1):
+    - Flutter
   - WebRTC-SDK (144.7559.01)
 
 DEPENDENCIES:
@@ -27,6 +29,7 @@ DEPENDENCIES:
   - flutter_webrtc (from `.symlinks/plugins/flutter_webrtc/ios`)
   - livekit_client (from `.symlinks/plugins/livekit_client/ios`)
   - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
+  - saver_gallery (from `.symlinks/plugins/saver_gallery/ios`)
 
 SPEC REPOS:
   trunk:
@@ -48,6 +51,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/livekit_client/ios"
   permission_handler_apple:
     :path: ".symlinks/plugins/permission_handler_apple/ios"
+  saver_gallery:
+    :path: ".symlinks/plugins/saver_gallery/ios"
 
 SPEC CHECKSUMS:
   CryptoSwift: e2e7776512f250e66205955da748e7a4e4abffe0
@@ -58,6 +63,7 @@ SPEC CHECKSUMS:
   flutter_webrtc: ec91d94b484ad49cf191ef93413f64a40ffd3b4c
   livekit_client: 9b9a08c5c78f694ac6a9e70c1c269704ba574b73
   permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
+  saver_gallery: af2d0c762dafda254e0ad025ef0dabd6506cd490
   WebRTC-SDK: ab9b5319e458c2bfebdc92b3600740da35d5630d
 
 PODFILE CHECKSUM: bf2f90a05a44434fa5f1e4834bc23bc1307eda97

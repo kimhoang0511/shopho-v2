@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -23,6 +23,10 @@ class User(Base):
     apt_building: Mapped[str | None] = mapped_column(String(20))
     apt_floor: Mapped[int | None] = mapped_column(SmallInteger)
     apt_room: Mapped[str | None] = mapped_column(String(20))
+    bank_code: Mapped[str | None] = mapped_column(String(50))
+    bank_account_number: Mapped[str | None] = mapped_column(String(30))
+    bank_account_name: Mapped[str | None] = mapped_column(String(100))
+    order_slots: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=5)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("NOW()"))
@@ -57,10 +61,32 @@ class ShipperAlert(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    apartment_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
-    building_keys: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
-    floors: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    min_gold: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("NOW()"))
+
+    locations: Mapped[list["ShipperAlertLocation"]] = relationship(
+        "ShipperAlertLocation",
+        primaryjoin="ShipperAlert.user_id == ShipperAlertLocation.user_id",
+        foreign_keys="ShipperAlertLocation.user_id",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class ShipperAlertLocation(Base):
+    """One row per (user, apartment, building?, floor?) location filter."""
+
+    __tablename__ = "shipper_alert_locations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    apartment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("apartments.id", ondelete="CASCADE"), nullable=False
+    )
+    building: Mapped[str | None] = mapped_column(String(20))   # NULL = any building
+    floor: Mapped[int | None] = mapped_column(SmallInteger)    # NULL = any floor
 
 
 class RefreshToken(Base):

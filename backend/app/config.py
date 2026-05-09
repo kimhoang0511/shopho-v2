@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     vietqr_account_number: str = ""   # bank account number
     payment_webhook_secret: str = ""  # secret token to verify webhook calls
 
+    # Slot top-up packages: price (VND) for each tier
+    slot_price_5: int = 25_000
+    slot_price_20: int = 60_000
+    slot_price_100: int = 100_000
+
+    @property
+    def slot_packages(self) -> dict[int, int]:
+        return {5: self.slot_price_5, 20: self.slot_price_20, 100: self.slot_price_100}
+
 
 @lru_cache
 def get_settings() -> Settings:

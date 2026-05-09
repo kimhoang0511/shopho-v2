@@ -12,11 +12,9 @@ from app.database import Base
 class OrderStatus(str, enum.Enum):
     pending = "pending"
     accepted = "accepted"
-    delivering = "delivering"
     completed = "completed"
     cancelled = "cancelled"
     expired = "expired"
-    disputed = "disputed"
 
 
 class ShipLocationType(str, enum.Enum):
@@ -65,6 +63,7 @@ class Order(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     estimated_minutes: Mapped[int | None] = mapped_column(SmallInteger)
     estimated_delivery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    total_gold: Mapped[float | None] = mapped_column(Numeric(8, 2))
 
     # relationships
     creator: Mapped["User"] = relationship("User", foreign_keys=[creator_id], back_populates="created_orders", lazy="selectin")
@@ -96,7 +95,7 @@ class OrderImage(Base):
 
 
 class OrderHistory(Base):
-    """Archived copy of closed orders (expired/completed/cancelled/disputed > 48h)."""
+    """Archived copy of closed orders (expired/completed/cancelled > 48h)."""
 
     __tablename__ = "order_history"
 

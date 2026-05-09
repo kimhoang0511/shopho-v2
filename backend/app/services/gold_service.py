@@ -233,55 +233,6 @@ async def adjust_gold_for_order_edit(
         )
 
 
-async def dispute_gold(
-    db: AsyncSession,
-    creator_id: uuid.UUID,
-    shipper_id: uuid.UUID,
-    order_id: uuid.UUID,
-    gold_reward: float,
-    order_note: str | None = None,
-) -> None:
-    """On dispute: shipper gets floor(gold/2), creator gets the rest.
-
-    Even gold (e.g. 4): shipper=2, creator=2.
-    Odd gold (e.g. 5): shipper=2, creator=3 (the remainder goes to creator).
-    """
-    total_int = int(gold_reward)
-    shipper_share = Decimal(total_int // 2)
-    creator_refund = Decimal(total_int) - shipper_share
-
-    # Always acquire user row locks in UUID order to prevent deadlocks.
-    # Two concurrent transactions touching the same pair of users (e.g. user A
-    # is shipper on order-1 and creator on order-2) would deadlock if each locks
-    # them in opposite order.  Sorting by UUID breaks the cycle.
-    if shipper_id <= creator_id:
-        await _record_and_update(
-            db, shipper_id, shipper_share,
-            GoldTxType.order_reward, order_id=order_id,
-            description=order_note,
-            idempotency_key=f"dispute_reward:{order_id}",
-        )
-        await _record_and_update(
-            db, creator_id, creator_refund,
-            GoldTxType.order_refund, order_id=order_id,
-            description=order_note,
-            idempotency_key=f"dispute_refund:{order_id}",
-        )
-    else:
-        await _record_and_update(
-            db, creator_id, creator_refund,
-            GoldTxType.order_refund, order_id=order_id,
-            description=order_note,
-            idempotency_key=f"dispute_refund:{order_id}",
-        )
-        await _record_and_update(
-            db, shipper_id, shipper_share,
-            GoldTxType.order_reward, order_id=order_id,
-            description=order_note,
-            idempotency_key=f"dispute_reward:{order_id}",
-        )
-
-
 async def reduce_gold_in_delivery(
     db: AsyncSession,
     creator_id: uuid.UUID,

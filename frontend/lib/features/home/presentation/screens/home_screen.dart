@@ -1,22 +1,69 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/api/api_client.dart';
 import '../../../../core/widgets/contact_footer.dart';
+
+const _kTopupWebUrl = 'http://localhost:5173';
+
+// ─── Provider ────────────────────────────────────────────────
 
 final _meProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final res = await ref.read(apiClientProvider).dio.get('/users/me');
   return res.data as Map<String, dynamic>;
 });
 
-class HomeScreen extends ConsumerWidget {
+// ─── Screen ──────────────────────────────────────────────────
+
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(_meProvider);
+    }
+  }
+
+  Future<void> _navigate(String path) async {
+    await context.push(path);
+    if (mounted) ref.invalidate(_meProvider);
+  }
+
+  Future<void> _openTopup() async {
+    const storage = FlutterSecureStorage();
+    final token = await storage.read(key: 'access_token');
+    if (token == null) return;
+    final uri = Uri.parse('$_kTopupWebUrl?token=${Uri.encodeComponent(token)}');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final meAsync = ref.watch(_meProvider);
+    final orderSlots = meAsync.valueOrNull?['order_slots'] as int?;
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -25,7 +72,7 @@ class HomeScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.person_outline),
-            onPressed: () => context.push('/profile').then((_) => ref.invalidate(_meProvider)),
+            onPressed: () => _navigate('/profile'),
           ),
         ],
       ),
@@ -35,12 +82,13 @@ class HomeScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _GoldCard(),
-              const SizedBox(height: 24),
-
               // ── App intro ────────────────────────────────────
               const _AppIntro(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+
+              // ── Slot balance card ─────────────────────────────
+              _SlotBalanceCard(slots: orderSlots, onTopup: _openTopup),
+              const SizedBox(height: 20),
 
               // ── Action cards ─────────────────────────────────
               Text('Bạn muốn làm gì?', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
@@ -52,14 +100,14 @@ class HomeScreen extends ConsumerWidget {
                       icon: Icons.search_rounded,
                       bgIcon: Icons.local_shipping_rounded,
                       label: 'Tìm đơn mua/ship hộ',
-                      subtitle: 'Tiếp nhận đơn & kiếm gold',
+                      subtitle: 'Tiếp nhận đơn & nhận thù lao',
                       gradient: const LinearGradient(
                         colors: [Color(0xFF5B6AF0), Color(0xFF3B4DD8)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       shadowColor: const Color(0xFF5B6AF0),
-                      onTap: () => context.push('/orders/browse').then((_) => ref.invalidate(_meProvider)),
+                      onTap: () => _navigate('/orders/browse'),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -75,7 +123,7 @@ class HomeScreen extends ConsumerWidget {
                         end: Alignment.bottomRight,
                       ),
                       shadowColor: const Color(0xFFF5A623),
-                      onTap: () => context.push('/orders/my-created').then((_) => ref.invalidate(_meProvider)),
+                      onTap: () => _navigate('/orders/my-created'),
                     ),
                   ),
                 ],
@@ -94,53 +142,82 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-// ─── Gold card ────────────────────────────────────────────────
+// ─── Slot balance card ────────────────────────────────────────
 
-class _GoldCard extends ConsumerWidget {
-  const _GoldCard();
+class _SlotBalanceCard extends StatelessWidget {
+  final int? slots;
+  final VoidCallback? onTopup;
+  const _SlotBalanceCard({required this.slots, this.onTopup});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final gold = ref.watch(_meProvider).whenOrNull(
-      data: (me) => (me['gold_balance'] as num?)?.toStringAsFixed(0),
-    );
+  Widget build(BuildContext context) {
+    final isEmpty = slots != null && slots! <= 0;
+    final color = isEmpty ? Colors.red.shade700 : const Color(0xFF5B6AF0);
+    final bgColor = isEmpty ? Colors.red.shade50 : const Color(0xFFF4F5FF);
+    final borderColor = isEmpty ? Colors.red.shade200 : const Color(0xFFDDE0FF);
+
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF5B6AF0), Color(0xFF7C3AED)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         children: [
-          const Icon(Icons.monetization_on_rounded, color: Color(0xFFF5A623), size: 40),
-          const SizedBox(width: 16),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.confirmation_number_outlined, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Số dư Gold', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                const SizedBox(height: 4),
                 Text(
-                  gold != null ? '$gold Gold' : '-- Gold',
-                  style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+                  'Số dư lượt tạo / nhận đơn',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
+                const SizedBox(height: 2),
+                slots == null
+                    ? Container(
+                        width: 60,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      )
+                    : Text(
+                        isEmpty ? 'Đã hết lượt' : '$slots lượt còn lại',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: color,
+                        ),
+                      ),
               ],
             ),
           ),
-          TextButton.icon(
-            onPressed: () => context.push('/gold/history'),
-            icon: const Icon(Icons.history_rounded, size: 16, color: Colors.white70),
-            label: const Text('Lịch sử', style: TextStyle(color: Colors.white70, fontSize: 13)),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              backgroundColor: Colors.white.withValues(alpha: 0.12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          if (isEmpty)
+            GestureDetector(
+              onTap: onTopup,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade700,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Nạp lượt',
+                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -184,8 +261,8 @@ class _AppIntro extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Kết nối người đang cần giúp đỡ mua/ship hàng hộ với người sẵn sàng mua/ship hộ ở trong cùng khu căn hộ - toà nhà - chung cư với nhau. '
-            'Người cần giúp tiết kiệm thời gian, người mua/ship hộ kiếm thêm thu nhập. Giá ship hộ người tạo đơn tự đặt, người mua/ship hộ có thể deal giá',
+            'Những người đang sống chung trong khu căn hộ/toà nhà, có thể giúp đỡ mua/ship hộ lẫn nhau. '
+            'Tiền công mua/ship hộ 2 bên có thể tự chọn, thương lượng nhau.',
             style: tt.bodySmall?.copyWith(color: Colors.grey.shade700, height: 1.5),
           ),
           const SizedBox(height: 14),
@@ -193,7 +270,7 @@ class _AppIntro extends StatelessWidget {
             children: [
               Expanded(child: _FeatureChip(icon: Icons.local_shipping_outlined,  label: 'Ship tận nơi')),
               SizedBox(width: 8),
-              Expanded(child: _FeatureChip(icon: Icons.monetization_on_outlined, label: 'Kiếm Gold')),
+              Expanded(child: _FeatureChip(icon: Icons.monetization_on_outlined, label: 'Kiếm tiền')),
               SizedBox(width: 8),
               Expanded(child: _FeatureChip(icon: Icons.schedule_rounded,         label: 'Nhanh & tiện')),
               SizedBox(width: 8),
@@ -275,7 +352,6 @@ class _ActionCard extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              // Decorative circle – top right
               Positioned(
                 right: -18,
                 top: -18,
@@ -288,7 +364,6 @@ class _ActionCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // Decorative circle – bottom left
               Positioned(
                 left: -12,
                 bottom: -12,
@@ -301,13 +376,11 @@ class _ActionCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // Large background icon
               Positioned(
                 right: -10,
                 bottom: -6,
                 child: Icon(bgIcon, size: 96, color: Colors.white.withValues(alpha: 0.13)),
               ),
-              // Foreground content
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(

@@ -266,7 +266,7 @@ class _SummaryCol extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          '$value Gold',
+          '${value}K',
           style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold),
         ),
       ],
@@ -363,12 +363,12 @@ class _TxTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              '$amountStr Gold',
+              '${amountStr}K',
               style: TextStyle(color: amountColor, fontWeight: FontWeight.bold, fontSize: 15),
             ),
             const SizedBox(height: 2),
             Text(
-              'Còn ${tx.balanceAfter.toStringAsFixed(0)} Gold',
+              'Còn ${tx.balanceAfter.toStringAsFixed(0)}K',
               style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
             ),
           ],

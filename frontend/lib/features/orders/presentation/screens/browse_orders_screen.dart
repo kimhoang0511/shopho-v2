@@ -11,6 +11,21 @@ import '../../../../core/api/api_client.dart';
 import '../../data/orders_repository.dart';
 import '../../domain/order_model.dart';
 
+// ─── Helpers ─────────────────────────────────────────────────
+
+String? _vndHint(String raw) {
+  final n = double.tryParse(raw.trim());
+  if (n == null || n <= 0) return null;
+  final vnd = (n * 1000).round();
+  final s = vnd.toString();
+  final buf = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+    buf.write(s[i]);
+  }
+  return '${buf.toString()} đ';
+}
+
 // ─── Vietnamese diacritic normalisation ──────────────────────
 
 String _removeDiacritics(String text) {
@@ -60,11 +75,13 @@ class OrderFilter {
   final List<String> apartmentIds; // whole-apartment IDs (no-building apts)
   final List<String> buildingKeys; // "apt_uuid:building_name" pairs
   final List<int> floors;          // empty = no floor filter
+  final double? minGold;           // null = no min-fee filter
 
   const OrderFilter({
     required this.apartmentIds,
     required this.buildingKeys,
     this.floors = const [],
+    this.minGold,
   });
 
   bool get isEmpty => apartmentIds.isEmpty && buildingKeys.isEmpty;
@@ -75,25 +92,53 @@ class OrderFilter {
       other is OrderFilter &&
       _listEq(apartmentIds, other.apartmentIds) &&
       _listEq(buildingKeys, other.buildingKeys) &&
-      _intListEq(floors, other.floors);
+      _intListEq(floors, other.floors) &&
+      minGold == other.minGold;
 
   @override
   int get hashCode => Object.hash(
         Object.hashAll(apartmentIds),
         Object.hashAll(buildingKeys),
         Object.hashAll(floors),
+        minGold,
       );
 
   Map<String, dynamic> toJson() => {
     'apartment_ids': apartmentIds,
     'building_keys': buildingKeys,
     if (floors.isNotEmpty) 'floors': floors,
+    if (minGold != null) 'min_gold': minGold,
   };
+
+  /// Converts the flat filter into the normalised locations list expected by
+  /// the /users/me/browse-alert API. Each (apt × floor) or (building × floor)
+  /// combination becomes one row; floors empty means a single NULL-floor row.
+  List<Map<String, dynamic>> toLocations() {
+    final locs = <Map<String, dynamic>>[];
+    final floorList = floors.isEmpty ? [null] : floors.map<int?>((f) => f).toList();
+
+    for (final aptId in apartmentIds) {
+      for (final floor in floorList) {
+        locs.add({'apartment_id': aptId, 'building': null, 'floor': floor});
+      }
+    }
+    for (final key in buildingKeys) {
+      final sep = key.indexOf(':');
+      if (sep < 0) continue;
+      final aptId = key.substring(0, sep);
+      final building = key.substring(sep + 1);
+      for (final floor in floorList) {
+        locs.add({'apartment_id': aptId, 'building': building, 'floor': floor});
+      }
+    }
+    return locs;
+  }
 
   factory OrderFilter.fromJson(Map<String, dynamic> json) => OrderFilter(
     apartmentIds: (json['apartment_ids'] as List<dynamic>?)?.cast<String>() ?? [],
     buildingKeys: (json['building_keys'] as List<dynamic>?)?.cast<String>() ?? [],
     floors: (json['floors'] as List<dynamic>?)?.cast<int>() ?? [],
+    minGold: (json['min_gold'] as num?)?.toDouble(),
   );
 
   static bool _listEq(List<String> a, List<String> b) {
@@ -215,6 +260,10 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
       if (mounted) {
         setState(() => _notifyEnabled = enabled);
         await prefs.setBool(_kAlertPrefKey, enabled);
+        // If notifications are on and filter is already loaded, sync to backend.
+        if (enabled && _filter != null && !_filter!.isEmpty) {
+          _syncAlertFilter(_filter!);
+        }
       }
     } catch (_) {}
   }
@@ -233,9 +282,8 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
       final dio = ref.read(apiClientProvider).dio;
       await dio.put('/users/me/browse-alert', data: {
         'enabled': next,
-        'apartment_ids': filter.apartmentIds,
-        'building_keys': filter.buildingKeys,
-        'floors': filter.floors,
+        if (filter.minGold != null) 'min_gold': filter.minGold,
+        'locations': filter.toLocations(),
       });
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_kAlertPrefKey, next);
@@ -270,9 +318,8 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
       final dio = ref.read(apiClientProvider).dio;
       await dio.put('/users/me/browse-alert', data: {
         'enabled': true,
-        'apartment_ids': filter.apartmentIds,
-        'building_keys': filter.buildingKeys,
-        'floors': filter.floors,
+        if (filter.minGold != null) 'min_gold': filter.minGold,
+        'locations': filter.toLocations(),
       });
     } catch (_) {}
   }
@@ -288,6 +335,7 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
         final filter = OrderFilter.fromJson(jsonDecode(raw) as Map<String, dynamic>);
         if (!filter.isEmpty) {
           setState(() => _filter = filter);
+          _syncAlertFilter(filter); // sync if _notifyEnabled was already set
           return;
         }
       } catch (_) {}
@@ -326,17 +374,27 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
     final f = _filter;
     if (f == null || f.isEmpty) return 'Chọn khu vực để tìm đơn';
     final parts = <String>[];
+
     for (final id in f.apartmentIds) {
       final apt = apts.firstWhere((a) => a.id == id, orElse: () => _AptInfo(id: id, name: id, address: '', buildings: []));
       parts.add(apt.name);
     }
+
+    // Group buildings by apartment to avoid repeating the apt name
+    final buildingsByApt = <String, List<String>>{};
     for (final key in f.buildingKeys) {
-      final building = key.split(':').last;
-      final aptId = key.split(':').first;
-      final apt = apts.firstWhere((a) => a.id == aptId, orElse: () => _AptInfo(id: aptId, name: '', address: '', buildings: []));
-      parts.add(apt.name.isNotEmpty ? '${apt.name} – Toà $building' : 'Toà $building');
+      final sep = key.indexOf(':');
+      if (sep < 0) continue;
+      (buildingsByApt[key.substring(0, sep)] ??= []).add(key.substring(sep + 1));
     }
+    for (final entry in buildingsByApt.entries) {
+      final apt = apts.firstWhere((a) => a.id == entry.key, orElse: () => _AptInfo(id: entry.key, name: '', address: '', buildings: []));
+      final buildings = entry.value.join(', ');
+      parts.add(apt.name.isNotEmpty ? '${apt.name} – $buildings' : buildings);
+    }
+
     if (f.floors.isNotEmpty) parts.add('Tầng ${f.floors.join(', ')}');
+    if (f.minGold != null) parts.add('≥ ${f.minGold!.toStringAsFixed(0)}K');
     return parts.join(' · ');
   }
 
@@ -427,7 +485,7 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
                         fontWeight: FontWeight.w500,
                         fontSize: 13,
                       ),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -473,14 +531,23 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
                       ),
                     ),
                     data: (orders) {
-                      if (orders.isEmpty) {
-                        return const Center(
+                      final minGold = filter?.minGold;
+                      final filtered = minGold != null
+                          ? orders.where((o) => o.goldReward >= minGold).toList()
+                          : orders;
+                      if (filtered.isEmpty) {
+                        return Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.inbox_outlined, size: 64, color: Colors.grey),
-                              SizedBox(height: 12),
-                              Text('Chưa có đơn nào đang chờ', style: TextStyle(color: Colors.grey)),
+                              const Icon(Icons.inbox_outlined, size: 64, color: Colors.grey),
+                              const SizedBox(height: 12),
+                              Text(
+                                minGold != null && orders.isNotEmpty
+                                    ? 'Không có đơn nào ≥ ${minGold.toStringAsFixed(0)}K'
+                                    : 'Chưa có đơn nào đang chờ',
+                                style: const TextStyle(color: Colors.grey),
+                              ),
                             ],
                           ),
                         );
@@ -488,13 +555,13 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
                       final currentUserId = ref.watch(_currentUserIdProvider).valueOrNull;
                       return ListView.separated(
                         padding: const EdgeInsets.all(16),
-                        itemCount: orders.length,
+                        itemCount: filtered.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemBuilder: (context, i) => _OrderCard(
-                          order: orders[i],
-                          isOwn: currentUserId != null && orders[i].creatorId == currentUserId,
+                          order: filtered[i],
+                          isOwn: currentUserId != null && filtered[i].creatorId == currentUserId,
                           onTap: () async {
-                            await context.push('/orders/${orders[i].id}');
+                            await context.push('/orders/${filtered[i].id}');
                             ref.invalidate(pendingOrdersProvider);
                           },
                         ),
@@ -523,6 +590,7 @@ class _FilterPickerScreenState extends ConsumerState<_FilterPickerScreen> {
   late Set<String> _selectedBuildingKeys; // "apt_id:building_name"
   final _floorCtrl = TextEditingController();
   final _searchCtrl = TextEditingController();
+  final _minGoldCtrl = TextEditingController();
   String _searchQuery = '';
   String? _floorError;
 
@@ -534,16 +602,21 @@ class _FilterPickerScreenState extends ConsumerState<_FilterPickerScreen> {
     if (widget.initialFilter.floors.isNotEmpty) {
       _floorCtrl.text = widget.initialFilter.floors.join(', ');
     }
+    if (widget.initialFilter.minGold != null) {
+      _minGoldCtrl.text = widget.initialFilter.minGold!.toStringAsFixed(0);
+    }
     _searchCtrl.addListener(() {
       setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
     });
     _floorCtrl.addListener(_validateFloor);
+    _minGoldCtrl.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _floorCtrl.dispose();
     _searchCtrl.dispose();
+    _minGoldCtrl.dispose();
     super.dispose();
   }
 
@@ -611,17 +684,18 @@ class _FilterPickerScreenState extends ConsumerState<_FilterPickerScreen> {
   }
 
   void _apply() {
-    // Block apply if floor field has a validation error
     if (_floorError != null) return;
     final floors = _totalUnits == 1
         ? (_parseFloors(_floorCtrl.text.trim()) ?? [])
         : <int>[];
+    final minGold = double.tryParse(_minGoldCtrl.text.trim());
     Navigator.pop(
       context,
       OrderFilter(
         apartmentIds: _selectedAptIds.toList(),
         buildingKeys: _selectedBuildingKeys.toList(),
         floors: floors,
+        minGold: (minGold != null && minGold > 0) ? minGold : null,
       ),
     );
   }
@@ -774,7 +848,7 @@ class _FilterPickerScreenState extends ConsumerState<_FilterPickerScreen> {
           // Floor filter (only when exactly 1 unit selected)
           if (showFloor)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: TextField(
                 controller: _floorCtrl,
                 keyboardType: TextInputType.text,
@@ -787,6 +861,27 @@ class _FilterPickerScreenState extends ConsumerState<_FilterPickerScreen> {
                 ),
               ),
             ),
+
+          // Min gold filter
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: TextField(
+              controller: _minGoldCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Tiền công mua/ship hộ tối thiểu (tuỳ chọn)',
+                hintText: 'VD: 10',
+                suffixText: 'K',
+                prefixIcon: const Icon(Icons.monetization_on_outlined),
+                helperText: () {
+                  final vnd = _vndHint(_minGoldCtrl.text);
+                  return vnd != null
+                      ? '= $vnd  ·  Chỉ hiện đơn có tiền công mua/ship ≥ mức này'
+                      : 'Chỉ hiện đơn có tiền công mua/ship ≥ mức này';
+                }(),
+              ),
+            ),
+          ),
 
           // Apply button
           SafeArea(
@@ -1050,7 +1145,7 @@ class _OrderCard extends StatelessWidget {
                             children: [
                               const Icon(Icons.monetization_on_rounded, size: 14, color: Color(0xFFF5A623)),
                               const SizedBox(width: 4),
-                              Text('+${order.goldReward.toStringAsFixed(0)} Gold',
+                              Text('+${order.goldReward.toStringAsFixed(0)}K',
                                   style: const TextStyle(color: Color(0xFFE65100), fontWeight: FontWeight.bold, fontSize: 13)),
                             ],
                           ),

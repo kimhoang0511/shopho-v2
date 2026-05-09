@@ -1,7 +1,6 @@
 """
-Background scheduler – runs every 30 seconds.
-Calls fn_expire_pending_orders() (stored proc) to atomically expire orders,
-then refunds gold and broadcasts WebSocket events for each expired order.
+Background scheduler – runs periodically to expire/auto-complete orders
+and broadcast WebSocket events.
 """
 import logging
 import uuid
@@ -13,7 +12,6 @@ from app.core.fcm import send_push
 from app.core.redis import publish_event
 from app.database import SessionLocal
 from app.models.user import DeviceToken
-from app.services.gold_service import refund_creator, reward_shipper
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +39,10 @@ async def expire_orders_job() -> None:
             order_ids = []
 
             for row in rows:
-                order_id, creator_id, gold_reward = row
-                logger.info("Expiring order %s (creator=%s gold=%.2f)", order_id, creator_id, gold_reward)
+                order_id, creator_id, _gold_reward = row
+                logger.info("Expiring order %s (creator=%s)", order_id, creator_id)
                 order_ids.append(order_id)
                 pending_notifications.append((creator_id, order_id))
-
-                # Refund gold while order row still exists (FK constraint)
-                try:
-                    await refund_creator(db, creator_id, order_id, float(gold_reward))
-                except Exception as e:
-                    logger.error("Gold refund failed for order %s: %s", order_id, e)
 
                 await publish_event("order_expired", {"order_id": str(order_id)})
 
@@ -58,54 +50,16 @@ async def expire_orders_job() -> None:
                 await db.commit()
                 logger.info("Expired %d orders (kept in DB for archival)", len(order_ids))
 
-                # Send FCM notifications AFTER commit — prevents re-sending if
-                # commit had failed (rollback would restore status to pending,
-                # causing the next job run to process and notify again)
                 for creator_id, order_id in pending_notifications:
-                    await _push(db, creator_id, "Đơn hàng đã hết hạn", "Đơn không có shipper nhận. Gold đã được hoàn trả.", order_id)
+                    await _push(db, creator_id, "Đơn hàng đã hết hạn", "Đơn không có shipper nhận.", order_id)
 
         except Exception as e:
             await db.rollback()
             logger.exception("expire_orders_job failed: %s", e)
 
 
-@scheduler.scheduled_job("interval", minutes=5, id="autocomplete_delivering", max_instances=1)
-async def autocomplete_delivering_job() -> None:
-    async with SessionLocal() as db:
-        try:
-            result = await db.execute(text("SELECT * FROM fn_autocomplete_delivering_orders()"))
-            rows = result.fetchall()
 
-            pending_notifications: list[tuple[uuid.UUID | None, uuid.UUID, float]] = []
-
-            for row in rows:
-                # Stored proc now returns creator_id — no extra per-row SELECT needed
-                order_id, shipper_id, creator_id, gold_reward = row
-                logger.info("Auto-completing order %s (shipper=%s gold=%.2f)", order_id, shipper_id, gold_reward)
-
-                try:
-                    await reward_shipper(db, shipper_id, order_id, float(gold_reward))
-                except Exception as e:
-                    logger.error("Gold reward failed for order %s: %s", order_id, e)
-
-                await publish_event("order_completed", {"order_id": str(order_id)})
-                pending_notifications.append((creator_id, shipper_id, order_id, float(gold_reward)))
-
-            if rows:
-                await db.commit()
-                logger.info("Auto-completed %d delivering orders", len(rows))
-
-                for creator_id, shipper_id, order_id, gold_reward in pending_notifications:
-                    await _push(db, shipper_id, "Đơn hoàn thành tự động!", f"{gold_reward:.0f} Gold đã được cộng vào tài khoản", order_id)
-                    if creator_id:
-                        await _push(db, creator_id, "Đơn hàng đã hoàn thành", "Đơn đã được tự động xác nhận sau 1 giờ giao hàng", order_id)
-
-        except Exception as e:
-            await db.rollback()
-            logger.exception("autocomplete_delivering_job failed: %s", e)
-
-
-@scheduler.scheduled_job("interval", minutes=10, id="autocomplete_accepted", max_instances=1)
+@scheduler.scheduled_job("interval", minutes=5, id="autocomplete_accepted", max_instances=1)
 async def autocomplete_accepted_job() -> None:
     async with SessionLocal() as db:
         try:
@@ -115,23 +69,18 @@ async def autocomplete_accepted_job() -> None:
             pending_notifications: list[tuple] = []
 
             for row in rows:
-                order_id, shipper_id, creator_id, gold_reward = row
-                logger.info("Auto-completing accepted order %s (shipper=%s gold=%.2f)", order_id, shipper_id, gold_reward)
-
-                try:
-                    await reward_shipper(db, shipper_id, order_id, float(gold_reward))
-                except Exception as e:
-                    logger.error("Gold reward failed for order %s: %s", order_id, e)
+                order_id, shipper_id, creator_id, _gold_reward = row
+                logger.info("Auto-completing accepted order %s (shipper=%s)", order_id, shipper_id)
 
                 await publish_event("order_completed", {"order_id": str(order_id)})
-                pending_notifications.append((creator_id, shipper_id, order_id, float(gold_reward)))
+                pending_notifications.append((creator_id, shipper_id, order_id))
 
             if rows:
                 await db.commit()
                 logger.info("Auto-completed %d accepted orders", len(rows))
 
-                for creator_id, shipper_id, order_id, gold_reward in pending_notifications:
-                    await _push(db, shipper_id, "Đơn hoàn thành tự động!", f"{gold_reward:.0f} Gold đã được cộng vào tài khoản", order_id)
+                for creator_id, shipper_id, order_id in pending_notifications:
+                    await _push(db, shipper_id, "Đơn hoàn thành tự động!", "Đơn đã được tự động xác nhận", order_id)
                     if creator_id:
                         await _push(db, creator_id, "Đơn hàng đã hoàn thành", "Đơn được tự động xác nhận do shipper không nhận phản hồi", order_id)
 
@@ -178,7 +127,7 @@ async def cleanup_stale_data_job() -> None:
             logger.exception("cleanup_stale_data_job failed: %s", e)
 
 
-_ARCHIVE_STATUSES = ("expired", "completed", "cancelled", "disputed")
+_ARCHIVE_STATUSES = ("expired", "completed", "cancelled")
 
 _ARCHIVE_SQL = text("""
 WITH archived AS (

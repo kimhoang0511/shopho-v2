@@ -69,6 +69,9 @@ _$OrderUserInfoImpl _$$OrderUserInfoImplFromJson(Map<String, dynamic> json) =>
       username: json['username'] as String,
       displayName: json['display_name'] as String?,
       avatarUrl: json['avatar_url'] as String?,
+      bankCode: json['bank_code'] as String?,
+      bankAccountNumber: json['bank_account_number'] as String?,
+      bankAccountName: json['bank_account_name'] as String?,
     );
 
 Map<String, dynamic> _$$OrderUserInfoImplToJson(_$OrderUserInfoImpl instance) =>
@@ -77,6 +80,9 @@ Map<String, dynamic> _$$OrderUserInfoImplToJson(_$OrderUserInfoImpl instance) =>
       'username': instance.username,
       'display_name': instance.displayName,
       'avatar_url': instance.avatarUrl,
+      'bank_code': instance.bankCode,
+      'bank_account_number': instance.bankAccountNumber,
+      'bank_account_name': instance.bankAccountName,
     };
 
 _$OrderDetailImpl _$$OrderDetailImplFromJson(Map<String, dynamic> json) =>
@@ -113,6 +119,7 @@ _$OrderDetailImpl _$$OrderDetailImplFromJson(Map<String, dynamic> json) =>
           ? null
           : DateTime.parse(json['estimated_delivery_at'] as String),
       minProposedGold: (json['min_proposed_gold'] as num?)?.toDouble(),
+      totalGold: (json['total_gold'] as num?)?.toDouble(),
       creator: json['creator'] == null
           ? null
           : OrderUserInfo.fromJson(json['creator'] as Map<String, dynamic>),
@@ -144,6 +151,7 @@ Map<String, dynamic> _$$OrderDetailImplToJson(_$OrderDetailImpl instance) =>
       'estimated_minutes': instance.estimatedMinutes,
       'estimated_delivery_at': instance.estimatedDeliveryAt?.toIso8601String(),
       'min_proposed_gold': instance.minProposedGold,
+      'total_gold': instance.totalGold,
       'creator': instance.creator,
       'shipper': instance.shipper,
     };
@@ -151,9 +159,7 @@ Map<String, dynamic> _$$OrderDetailImplToJson(_$OrderDetailImpl instance) =>
 const _$OrderStatusEnumMap = {
   OrderStatus.pending: 'pending',
   OrderStatus.accepted: 'accepted',
-  OrderStatus.delivering: 'delivering',
   OrderStatus.completed: 'completed',
   OrderStatus.cancelled: 'cancelled',
   OrderStatus.expired: 'expired',
-  OrderStatus.disputed: 'disputed',
 };

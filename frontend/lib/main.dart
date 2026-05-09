@@ -17,8 +17,6 @@ import 'features/orders/presentation/screens/create_order_screen.dart';
 import 'features/orders/presentation/screens/edit_order_screen.dart';
 import 'features/orders/presentation/screens/my_orders_screen.dart';
 import 'features/orders/presentation/screens/order_detail_screen.dart';
-import 'features/gold/presentation/screens/gold_history_screen.dart';
-import 'features/gold/presentation/screens/top_up_screen.dart';
 import 'core/services/call_service.dart';
 import 'core/services/fcm_service.dart';
 import 'core/services/version_check_service.dart';
@@ -91,8 +89,6 @@ final _router = GoRouter(
     GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
     GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
     GoRoute(path: '/admin', builder: (_, __) => const AdminPanelScreen()),
-    GoRoute(path: '/gold/history', builder: (_, __) => const GoldHistoryScreen()),
-    GoRoute(path: '/gold/topup', builder: (_, __) => const TopUpScreen()),
     GoRoute(path: '/orders/browse', builder: (_, __) => const BrowseOrdersScreen()),
     GoRoute(path: '/orders/create', builder: (_, __) => const CreateOrderScreen()),
     GoRoute(path: '/orders/mine', builder: (_, __) => const MyOrdersScreen()),

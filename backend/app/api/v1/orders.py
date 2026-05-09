@@ -9,8 +9,8 @@ from app.api.v1.deps import current_user
 from app.database import get_db
 from app.models.order import ShipLocationType
 from app.models.user import User
-from app.schemas.order import AcceptOrderBody, AcceptOrderResponse, CompleteOrderBody, DeliverOrderBody, GoldProposalResponse, MarketPriceItem, OrderCreate, OrderListItem, OrderResponse, ProposeGoldBody, ReduceGoldBody
-from app.services.order_service import OrderError, accept_gold_proposal, accept_order, cancel_order, complete_order, create_order, dispute_order, list_pending_orders, list_proposals, propose_gold, renew_order, shipper_cancel_order, shipper_confirm_delivery, shipper_reduce_gold, update_order
+from app.schemas.order import AcceptOrderBody, AcceptOrderResponse, CompleteOrderBody, DeliverOrderBody, GoldProposalResponse, MarketPriceItem, OrderCreate, OrderListItem, OrderResponse, ProposeGoldBody
+from app.services.order_service import OrderError, accept_gold_proposal, accept_order, cancel_order, complete_order, create_order, list_pending_orders, list_proposals, propose_gold, renew_order, shipper_cancel_order, shipper_confirm_delivery, update_order
 from app.services.storage_service import upload_image
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -171,7 +171,7 @@ async def market_prices_endpoint(
         .where(
             Order.ship_apartment_id == ship_apartment_id,
             Order.ship_location == ship_location,
-            Order.status.in_([OrderStatus.accepted, OrderStatus.delivering, OrderStatus.completed]),
+            Order.status.in_([OrderStatus.accepted, OrderStatus.completed]),
         )
         .order_by(Order.created_at.desc())
         .limit(7)
@@ -213,8 +213,8 @@ async def accept_order_endpoint(
     user: User = Depends(current_user),
 ):
     try:
-        order, new_balance = await accept_order(db, user, order_id, body.estimated_minutes)
-        return AcceptOrderResponse(order=order, new_gold_balance=new_balance)
+        order = await accept_order(db, user, order_id, body.estimated_minutes)
+        return AcceptOrderResponse(order=order)
     except OrderError as e:
         _raise(e)
 
@@ -229,24 +229,10 @@ async def deliver_order_endpoint(
     user: User = Depends(current_user),
 ):
     try:
-        return await shipper_confirm_delivery(db, user, order_id, body.adjusted_gold)
+        return await shipper_confirm_delivery(db, user, order_id, body.adjusted_gold, body.total_gold)
     except OrderError as e:
         _raise(e)
 
-
-# ─── SHIPPER: REDUCE GOLD ────────────────────────────────────
-
-@router.post("/{order_id}/reduce-gold", response_model=OrderResponse)
-async def reduce_gold_endpoint(
-    order_id: uuid.UUID,
-    body: ReduceGoldBody,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_user),
-):
-    try:
-        return await shipper_reduce_gold(db, user, order_id, body.new_gold)
-    except OrderError as e:
-        _raise(e)
 
 
 # ─── SHIPPER CANCEL ──────────────────────────────────────────
@@ -277,19 +263,6 @@ async def complete_order_endpoint(
     except OrderError as e:
         _raise(e)
 
-
-# ─── DISPUTE ────────────────────────────────────────────────
-
-@router.post("/{order_id}/dispute", response_model=OrderResponse)
-async def dispute_order_endpoint(
-    order_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_user),
-):
-    try:
-        return await dispute_order(db, user, order_id)
-    except OrderError as e:
-        _raise(e)
 
 
 # ─── RENEW ──────────────────────────────────────────────────

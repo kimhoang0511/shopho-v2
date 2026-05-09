@@ -100,10 +100,10 @@ class OrdersRepository {
     return OrderDetail.fromJson(res.data);
   }
 
-  Future<OrderDetail> deliverOrder(String orderId, {double? adjustedGold}) async {
+  Future<OrderDetail> deliverOrder(String orderId, {double? totalGold}) async {
     final res = await _dio.post(
       '/orders/$orderId/deliver',
-      data: {'adjusted_gold': adjustedGold},
+      data: {'total_gold': totalGold},
     );
     return OrderDetail.fromJson(res.data);
   }
@@ -115,11 +115,6 @@ class OrdersRepository {
 
   Future<OrderDetail> reduceGold(String orderId, double newGold) async {
     final res = await _dio.post('/orders/$orderId/reduce-gold', data: {'new_gold': newGold});
-    return OrderDetail.fromJson(res.data);
-  }
-
-  Future<OrderDetail> disputeOrder(String orderId) async {
-    final res = await _dio.post('/orders/$orderId/dispute');
     return OrderDetail.fromJson(res.data);
   }
 

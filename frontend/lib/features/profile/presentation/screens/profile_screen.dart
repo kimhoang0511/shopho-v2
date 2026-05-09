@@ -7,6 +7,83 @@ import '../../../../core/auth_state.dart';
 import '../../../../core/services/fcm_service.dart';
 import '../../../../core/services/user_event_socket.dart';
 
+// ── Bank data ─────────────────────────────────────────────
+
+class _BankOption {
+  final String code;
+  final String name;
+  const _BankOption(this.code, this.name);
+}
+
+const List<_BankOption> _kBanks = [
+  _BankOption('Techcombank',        'Ngân hàng TMCP Kỹ thương Việt Nam'),
+  _BankOption('Vietcombank',        'Ngân hàng TMCP Ngoại Thương Việt Nam'),
+  _BankOption('BIDV',               'Ngân hàng TMCP Đầu tư và Phát triển Việt Nam'),
+  _BankOption('Vietinbank',         'Ngân hàng TMCP Công thương Việt Nam'),
+  _BankOption('Agribank',           'Ngân hàng Nông nghiệp và Phát triển Nông thôn Việt Nam'),
+  _BankOption('MBBank',             'Ngân hàng TMCP Quân đội'),
+  _BankOption('VPBank',             'Ngân hàng TMCP Việt Nam Thịnh Vượng'),
+  _BankOption('ACB',                'Ngân hàng TMCP Á Châu'),
+  _BankOption('TPBank',             'Ngân hàng TMCP Tiên Phong'),
+  _BankOption('Sacombank',          'Ngân hàng TMCP Sài Gòn Thương Tín'),
+  _BankOption('HDBank',             'Ngân hàng TMCP Phát triển Thành phố Hồ Chí Minh'),
+  _BankOption('VIB',                'Ngân hàng TMCP Quốc tế Việt Nam'),
+  _BankOption('SHB',                'Ngân hàng TMCP Sài Gòn - Hà Nội'),
+  _BankOption('OCB',                'Ngân hàng TMCP Phương Đông'),
+  _BankOption('SeABank',            'Ngân hàng TMCP Đông Nam Á'),
+  _BankOption('LPBank',             'Ngân hàng TMCP Lộc Phát Việt Nam'),
+  _BankOption('MSB',                'Ngân hàng TMCP Hàng Hải'),
+  _BankOption('ABBANK',             'Ngân hàng TMCP An Bình'),
+  _BankOption('NamABank',           'Ngân hàng TMCP Nam Á'),
+  _BankOption('NCB',                'Ngân hàng TMCP Quốc Dân'),
+  _BankOption('BacABank',           'Ngân hàng TMCP Bắc Á'),
+  _BankOption('PGBank',             'Ngân hàng TMCP Xăng dầu Petrolimex'),
+  _BankOption('VietABank',          'Ngân hàng TMCP Việt Á'),
+  _BankOption('BaoVietBank',        'Ngân hàng TMCP Bảo Việt'),
+  _BankOption('SaigonBank',         'Ngân hàng TMCP Sài Gòn Công Thương'),
+  _BankOption('PVcomBank',          'Ngân hàng TMCP Đại Chúng Việt Nam'),
+  _BankOption('VietCapitalBank',    'Ngân hàng TMCP Bản Việt'),
+  _BankOption('VietBank',           'Ngân hàng TMCP Việt Nam Thương Tín'),
+  _BankOption('Eximbank',           'Ngân hàng TMCP Xuất Nhập khẩu Việt Nam'),
+  _BankOption('DongABank',          'Ngân hàng TMCP Đông Á'),
+  _BankOption('SCB',                'Ngân hàng TMCP Sài Gòn'),
+  _BankOption('KienLongBank',       'Ngân hàng TMCP Kiên Long'),
+  _BankOption('COOPBANK',           'Ngân hàng Hợp tác xã Việt Nam'),
+  _BankOption('GPBank',             'Ngân hàng Thương mại TNHH MTV Dầu Khí Toàn Cầu'),
+  _BankOption('CBBank',             'Ngân hàng Thương mại TNHH MTV Xây dựng Việt Nam'),
+  _BankOption('Oceanbank',          'Ngân hàng Thương mại TNHH MTV Đại Dương'),
+  _BankOption('CAKE',               'TMCP Việt Nam Thịnh Vượng - Ngân hàng số CAKE by VPBank'),
+  _BankOption('Ubank',              'TMCP Việt Nam Thịnh Vượng - Ngân hàng số Ubank by VPBank'),
+  _BankOption('LioBank',            'Ngân hàng số LioBank'),
+  _BankOption('Timo',               'Ngân hàng số Timo by Ban Viet Bank'),
+  _BankOption('Umee',               'Ngân hàng số Umee - Kiên Long Bank'),
+  _BankOption('ViettelMoney',       'Tổng Công ty Dịch vụ số Viettel'),
+  _BankOption('VNPTMoney',          'Trung tâm dịch vụ tài chính số VNPT (VNPT Fintech)'),
+  _BankOption('VRB',                'Ngân hàng Liên doanh Việt - Nga'),
+  _BankOption('HSBC',               'Ngân hàng TNHH MTV HSBC (Việt Nam)'),
+  _BankOption('ShinhanBank',        'Ngân hàng TNHH MTV Shinhan Việt Nam'),
+  _BankOption('Woori',              'Ngân hàng TNHH MTV Woori Việt Nam'),
+  _BankOption('HongLeong',          'Ngân hàng TNHH MTV Hongleong Việt Nam'),
+  _BankOption('CIMB',               'Ngân hàng TNHH MTV CIMB Việt Nam'),
+  _BankOption('PublicBank',         'Ngân hàng TNHH MTV Public Việt Nam'),
+  _BankOption('IndovinaBank',       'Ngân hàng TNHH Indovina'),
+  _BankOption('StandardChartered',  'Ngân hàng TNHH MTV Standard Chartered Bank Việt Nam'),
+  _BankOption('IBK',                'Ngân hàng Công nghiệp Hàn Quốc'),
+  _BankOption('KookminHN',          'Ngân hàng Kookmin - Chi nhánh Hà Nội'),
+  _BankOption('KookminHCM',         'Ngân hàng Kookmin - Chi nhánh Thành phố Hồ Chí Minh'),
+  _BankOption('KEBHanaHCMBank',     'Ngân hàng Keb Hana - Chi nhánh TP. Hồ Chí Minh'),
+  _BankOption('KEBHanaHNBank',      'Ngân hàng Keb Hana - Chi nhánh Hà Nội'),
+  _BankOption('Nonghyup',           'Ngân hàng Nonghyup - Chi nhánh Hà Nội'),
+  _BankOption('KBank',              'Ngân hàng Đại chúng Kasikornbank - Chi nhánh TP. Hồ Chí Minh'),
+  _BankOption('UnitedOverseas',     'Ngân hàng United Overseas - Chi nhánh TP. Hồ Chí Minh'),
+  _BankOption('CathayUnitedBank',   'Ngân hàng Cathay United Bank - Chi nhánh TP. Hồ Chí Minh'),
+  _BankOption('DBSBank',            'DBS Bank Ltd - Chi nhánh Thành phố Hồ Chí Minh'),
+  _BankOption('CitibankHN',         'Ngân hàng Citibank - Chi nhánh Hà Nội'),
+  _BankOption('BNPHCM',             'Ngân hàng BNP Paribas - Chi nhánh TP. Hồ Chí Minh'),
+  _BankOption('BNPHN',              'Ngân hàng BNP Paribas - Chi nhánh Hà Nội'),
+  _BankOption('BIDC',               'Ngân hàng Đầu tư và Phát triển Campuchia - Chi nhánh Hà Nội'),
+];
+
 // ── Models ──────────────────────────────────────────────────
 
 class _Building {
@@ -104,7 +181,6 @@ class _ProfileBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final displayName = me['display_name'] as String? ?? me['username'] as String? ?? '---';
     final username = me['username'] as String? ?? '---';
-    final gold = (me['gold_balance'] as num?)?.toStringAsFixed(0) ?? '--';
 
     final aptMap = me['apartment'] as Map<String, dynamic>?;
     final aptName = aptMap?['name'] as String?;
@@ -113,6 +189,17 @@ class _ProfileBody extends ConsumerWidget {
     final aptFloor = me['apt_floor'];
     final aptRoom = me['apt_room'] as String?;
     final aptBuildingCount = ((aptMap?['buildings'] as List?)?.length ?? 0);
+
+    final bankCode = me['bank_code'] as String?;
+    final bankAccountNumber = me['bank_account_number'] as String?;
+    final bankAccountName = me['bank_account_name'] as String?;
+    final bankOption = bankCode != null
+        ? _kBanks.firstWhere((b) => b.code == bankCode, orElse: () => _BankOption(bankCode, bankCode))
+        : null;
+    final bankLine1 = bankOption != null ? bankOption.code : 'Chưa cập nhật';
+    final bankLine2 = bankAccountNumber != null
+        ? '$bankAccountNumber${bankAccountName != null ? ' • $bankAccountName' : ''}'
+        : null;
 
     String aptLine1 = 'Chưa cập nhật';
     String? aptLine2;
@@ -151,33 +238,6 @@ class _ProfileBody extends ConsumerWidget {
         ),
         const SizedBox(height: 28),
 
-        // Gold balance
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF5B6AF0), Color(0xFF7C3AED)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.monetization_on_rounded, color: Color(0xFFF5A623), size: 32),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Số dư Gold', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  Text('$gold Gold', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
         // Info card
         Card(
           child: Column(
@@ -206,6 +266,39 @@ class _ProfileBody extends ConsumerWidget {
                             Text(aptLine1, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
                             if (aptLine2 != null)
                               Text(aptLine2, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, color: Colors.grey),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () async {
+                  final ok = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(builder: (_) => _BankPickerScreen(me: me)),
+                  );
+                  if (ok == true) ref.invalidate(_meProvider);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.account_balance_outlined, color: Color(0xFF5B6AF0)),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Ngân hàng', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            const SizedBox(height: 2),
+                            Text(bankLine1, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
+                            if (bankLine2 != null)
+                              Text(bankLine2, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                           ],
                         ),
                       ),
@@ -534,6 +627,273 @@ class _AptTile extends StatelessWidget {
     color: Colors.grey.shade100,
     child: const Icon(Icons.apartment_outlined, color: Colors.grey, size: 28),
   );
+}
+
+// ── Bank picker screen ────────────────────────────────────
+
+class _BankPickerScreen extends ConsumerStatefulWidget {
+  final Map<String, dynamic> me;
+  const _BankPickerScreen({required this.me});
+
+  @override
+  ConsumerState<_BankPickerScreen> createState() => _BankPickerScreenState();
+}
+
+class _BankPickerScreenState extends ConsumerState<_BankPickerScreen> {
+  _BankOption? _selectedBank;
+  final _accountNumberCtrl = TextEditingController();
+  final _accountNameCtrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final code = widget.me['bank_code'] as String?;
+    if (code != null) {
+      _selectedBank = _kBanks.firstWhere(
+        (b) => b.code == code,
+        orElse: () => _BankOption(code, code),
+      );
+    }
+    _accountNumberCtrl.text = widget.me['bank_account_number'] as String? ?? '';
+    _accountNameCtrl.text = widget.me['bank_account_name'] as String? ?? '';
+  }
+
+  @override
+  void dispose() {
+    _accountNumberCtrl.dispose();
+    _accountNameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickBank() async {
+    final result = await showModalBottomSheet<_BankOption>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _BankSearchSheet(selected: _selectedBank),
+    );
+    if (result != null) setState(() => _selectedBank = result);
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await ref.read(apiClientProvider).dio.patch('/users/me', data: {
+        if (_selectedBank != null) 'bank_code': _selectedBank!.code,
+        if (_accountNumberCtrl.text.trim().isNotEmpty)
+          'bank_account_number': _accountNumberCtrl.text.trim(),
+        if (_accountNameCtrl.text.trim().isNotEmpty)
+          'bank_account_name': _accountNameCtrl.text.trim().toUpperCase(),
+      });
+      if (mounted) Navigator.pop(context, true);
+    } on DioException catch (e) {
+      final msg = extractApiError(e, 'Lưu thất bại');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg.toString()), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Tài khoản ngân hàng'),
+        actions: [
+          if (_saving)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            TextButton(
+              onPressed: _save,
+              child: const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          // Bank selector
+          InkWell(
+            onTap: _pickBank,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: _selectedBank != null ? const Color(0xFF5B6AF0) : Colors.grey.shade400,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.account_balance_outlined,
+                    color: _selectedBank != null ? const Color(0xFF5B6AF0) : Colors.grey,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _selectedBank == null
+                        ? const Text('Chọn ngân hàng', style: TextStyle(color: Colors.grey, fontSize: 15))
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _selectedBank!.code,
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                              ),
+                              Text(
+                                _selectedBank!.name,
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                  ),
+                  Icon(Icons.arrow_drop_down, color: Colors.grey.shade600),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _accountNumberCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Số tài khoản',
+              prefixIcon: const Icon(Icons.tag_outlined),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _accountNameCtrl,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: 'Chủ tài khoản',
+              hintText: 'VD: NGUYEN VAN A',
+              prefixIcon: const Icon(Icons.person_outline),
+              helperText: 'Nhập chính xác theo tên in trên thẻ (IN HOA)',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Bank search bottom sheet ───────────────────────────────
+
+class _BankSearchSheet extends StatefulWidget {
+  final _BankOption? selected;
+  const _BankSearchSheet({this.selected});
+
+  @override
+  State<_BankSearchSheet> createState() => _BankSearchSheetState();
+}
+
+class _BankSearchSheetState extends State<_BankSearchSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _query.isEmpty
+        ? _kBanks
+        : _kBanks.where((b) =>
+            b.code.toLowerCase().contains(_query) ||
+            b.name.toLowerCase().contains(_query)).toList();
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.9,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) => Column(
+        children: [
+          Container(
+            width: 40, height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+              decoration: InputDecoration(
+                hintText: 'Tìm theo tên hoặc mã ngân hàng...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () { _searchCtrl.clear(); setState(() => _query = ''); },
+                      )
+                    : null,
+                isDense: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              controller: scrollController,
+              itemCount: filtered.length,
+              itemBuilder: (_, i) {
+                final bank = filtered[i];
+                final isSelected = widget.selected?.code == bank.code;
+                return ListTile(
+                  leading: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: isSelected ? const Color(0xFFEEF0FF) : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Text(
+                        bank.code.substring(0, bank.code.length.clamp(0, 3)),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? const Color(0xFF5B6AF0) : Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  title: Text(bank.code, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  subtitle: Text(bank.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                  trailing: isSelected
+                      ? const Icon(Icons.check_circle_rounded, color: Color(0xFF5B6AF0))
+                      : null,
+                  onTap: () => Navigator.pop(context, bank),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Building selector ─────────────────────────────────────

@@ -98,9 +98,24 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     super.initState();
     _loadPrefs();
     _goldFocusNode.addListener(_onGoldFocus);
+    _goldCtrl.addListener(_onGoldChanged);
   }
 
   void _onGoldFocus() => setState(() => _goldFocused = _goldFocusNode.hasFocus);
+  void _onGoldChanged() => setState(() {});
+
+  String _vndHint(String raw) {
+    final n = double.tryParse(raw.trim());
+    if (n == null || n <= 0) return '';
+    final vnd = (n * 1000).round();
+    final s = vnd.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+      buf.write(s[i]);
+    }
+    return '${buf.toString()} đ';
+  }
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
@@ -133,6 +148,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     _goldFocusNode
       ..removeListener(_onGoldFocus)
       ..dispose();
+    _goldCtrl.removeListener(_onGoldChanged);
     _noteCtrl.dispose();
     _goldCtrl.dispose();
     super.dispose();
@@ -253,16 +269,20 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                   controller: _goldCtrl,
                   focusNode: _goldFocusNode,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Trả gold công ship',
-                    prefixIcon: Icon(Icons.monetization_on_outlined),
-                    suffixText: 'Gold',
-                    helperText: 'Chỉ tính công mua/ship, KHÔNG bao gồm tiền hàng mua. Tiền hàng mua tự thanh toán riêng với người ship.',
+                  decoration: InputDecoration(
+                    labelText: 'Trả tiền công mua/ship hộ',
+                    prefixIcon: const Icon(Icons.monetization_on_outlined),
+                    suffixText: 'K',
+                    helperText: () {
+                      final vnd = _vndHint(_goldCtrl.text);
+                      return vnd.isEmpty
+                          ? 'Chỉ tính công mua/ship, CHƯA bao gồm tiền hàng mua.'
+                          : '= $vnd  ·  Chỉ tính công mua/ship, CHƯA bao gồm tiền hàng mua.';
+                    }(),
                     helperMaxLines: 3,
                   ),
                   validator: (v) {
-                    final n = double.tryParse(v ?? '');
-                    if (n == null || n < 2) return 'Tối thiểu 2 Gold';
+                    if (double.tryParse(v ?? '') == null) return 'Vui lòng nhập số hợp lệ';
                     return null;
                   },
                 ),
@@ -412,7 +432,7 @@ class _MarketPricePanel extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '$goldStr Gold',
+                          '${goldStr}K',
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
