@@ -146,7 +146,7 @@ async def test_push(
     _=Depends(_require_admin),
 ):
     from app.models.user import DeviceToken
-    from app.core.fcm import send_push
+    from app.core.fcm import send_push, prune_stale_tokens
 
     user_id = body.get("user_id")
     token = body.get("token")
@@ -205,10 +205,11 @@ async def test_push(
         raise HTTPException(status_code=500, detail={"message": "FCM chưa khởi tạo được", "b64_diagnostics": b64_info, "init_error": fcm_init_error})
 
     stale = await send_push(tokens, title, message, {"test": "true"})
+    await prune_stale_tokens(db, stale)
     return {
         "fcm_initialized": fcm_ready,
         "tokens_found": len(tokens),
         "tokens_sent": len(tokens) - len(stale),
-        "tokens_stale": stale,
+        "tokens_stale_deleted": len(stale),
         "status": "sent",
     }

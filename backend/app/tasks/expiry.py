@@ -8,7 +8,7 @@ import uuid
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, text
 
-from app.core.fcm import send_push
+from app.core.fcm import send_push, prune_stale_tokens
 from app.core.redis import publish_event
 from app.database import SessionLocal
 from app.models.user import DeviceToken
@@ -22,7 +22,8 @@ async def _push(db, user_id: uuid.UUID, title: str, body: str, order_id) -> None
     try:
         result = await db.execute(select(DeviceToken).where(DeviceToken.user_id == user_id))
         tokens = [r.token for r in result.scalars().all()]
-        await send_push(tokens, title, body, {"order_id": str(order_id)})
+        stale = await send_push(tokens, title, body, {"order_id": str(order_id)})
+        await prune_stale_tokens(db, stale)
     except Exception as e:
         logger.error("FCM push failed for user %s: %s", user_id, e)
 

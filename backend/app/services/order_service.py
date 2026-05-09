@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.redis import cache_delete, publish_event
 from app.models.order import Order, OrderImage, OrderStatus, ShipLocationType, VALIDITY_OPTIONS
 from app.models.user import DeviceToken, ShipperAlert, ShipperAlertLocation, User
-from app.core.fcm import send_push
+from app.core.fcm import send_push, prune_stale_tokens
 from app.schemas.order import OrderCreate, OrderListItem, OrderResponse
 
 logger = logging.getLogger(__name__)
@@ -63,12 +63,13 @@ async def _push_new_order_alerts(
             )
             tokens = list(rows.scalars().all())
             if tokens:
-                await send_push(
+                stale = await send_push(
                     tokens,
                     "Có đơn hàng mới!",
                     f"{gold_reward:.0f}K · {note[:60]}",
                     {"order_id": str(order_id), "type": "new_order"},
                 )
+                await prune_stale_tokens(db, stale)
     except Exception as exc:
         logger.error("_push_new_order_alerts failed: %s", exc)
 
@@ -84,7 +85,8 @@ class OrderError(Exception):
 async def _push(db: AsyncSession, user_id: uuid.UUID, title: str, body: str, order_id: uuid.UUID) -> None:
     result = await db.execute(select(DeviceToken).where(DeviceToken.user_id == user_id))
     tokens = [row.token for row in result.scalars().all()]
-    await send_push(tokens, title, body, {"order_id": str(order_id)})
+    stale = await send_push(tokens, title, body, {"order_id": str(order_id)})
+    await prune_stale_tokens(db, stale)
 
 def _calc_expires(validity_option: str) -> datetime:
     minutes = VALIDITY_OPTIONS[validity_option]

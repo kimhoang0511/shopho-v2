@@ -4,6 +4,10 @@ import json
 import logging
 import os
 from datetime import timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -105,3 +109,13 @@ async def send_push(
     except Exception as e:
         logger.error("FCM send failed: %s", e)
         return []
+
+
+async def prune_stale_tokens(db: "AsyncSession", stale: list[str]) -> None:
+    """Delete permanently-invalid FCM tokens from the database."""
+    if not stale:
+        return
+    from sqlalchemy import delete
+    from app.models.user import DeviceToken
+    await db.execute(delete(DeviceToken).where(DeviceToken.token.in_(stale)))
+    await db.commit()

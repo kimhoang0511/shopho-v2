@@ -22,9 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import current_user
 from app.config import get_settings
 from app.core.apns import send_voip_push_multi
-from sqlalchemy import delete as sql_delete
 
-from app.core.fcm import send_push
+from app.core.fcm import send_push, prune_stale_tokens
 from app.core.redis import get_redis
 from app.core.security import decode_access_token
 from app.database import SessionLocal, get_db
@@ -39,12 +38,6 @@ _ACTIVE_STATUSES = {OrderStatus.accepted}
 
 _TOKEN_TTL = timedelta(hours=1)
 
-
-async def _prune_stale_tokens(db: AsyncSession, stale: list[str]) -> None:
-    if not stale:
-        return
-    await db.execute(sql_delete(DeviceToken).where(DeviceToken.token.in_(stale)))
-    await db.commit()
 
 
 def _chat_channel(order_id: uuid.UUID) -> str:
@@ -199,7 +192,7 @@ async def initiate_call(
 
     # Remove tokens FCM rejected as permanently invalid (non-blocking)
     if stale:
-        await _prune_stale_tokens(db, stale)
+        await prune_stale_tokens(db, stale)
 
     return {
         "call_id": call_id,
@@ -286,7 +279,7 @@ async def cancel_call(
             data=cancel_data,
             data_only=True,
         )
-        await _prune_stale_tokens(db, stale)
+        await prune_stale_tokens(db, stale)
 
     return {"ok": True}
 
@@ -417,7 +410,7 @@ async def ws_chat(
                 )
                 if stale:
                     async with SessionLocal() as db_prune:
-                        await _prune_stale_tokens(db_prune, stale)
+                        await prune_stale_tokens(db_prune, stale)
 
     except WebSocketDisconnect:
         pass
