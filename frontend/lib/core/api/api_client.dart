@@ -35,7 +35,7 @@ String extractApiError(DioException e, String fallback) {
   return fallback;
 }
 
-const _productionHost = 'shopho-production.up.railway.app';
+const _productionHost = 'backend-shopho-production.up.railway.app';
 const _isDev = bool.fromEnvironment('FLUTTER_DEV', defaultValue: false);
 
 const apiBaseUrl = _isDev
