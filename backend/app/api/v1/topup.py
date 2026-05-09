@@ -137,21 +137,23 @@ async def get_topup_status(
 async def payment_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    secure_token: str = Header(default="", alias="secure-token"),
     authorization: str = Header(default=""),
 ):
     """
     Webhook từ Casso khi nhận được giao dịch chuyển khoản.
 
-    Casso gửi header: Authorization: Apikey <PAYMENT_WEBHOOK_SECRET>
+    Casso gửi header: secure-token: <PAYMENT_WEBHOOK_SECRET>
     Payload JSON chứa:
       - data[].amount  : số tiền (int, VND)
       - data[].description : nội dung chuyển khoản (chứa order_code)
       - data[].is_incoming : True nếu là tiền vào
     """
-    # Verify Casso secret — Casso gửi raw key hoặc "Apikey <key>"
+    # Verify Casso secret — Casso gửi qua header "secure-token"
     if settings.payment_webhook_secret:
         secret = settings.payment_webhook_secret
-        if authorization not in (secret, f"Apikey {secret}"):
+        received = secure_token or authorization
+        if received not in (secret, f"Apikey {secret}"):
             raise HTTPException(401, "Invalid webhook secret")
 
     import re
