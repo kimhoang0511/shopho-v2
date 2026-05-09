@@ -186,10 +186,23 @@ async def test_push(
         b64_info["decode_ok"] = False
         b64_info["decode_error"] = str(decode_err)
 
+    fcm_init_error = None
+    try:
+        import firebase_admin
+        from firebase_admin import credentials as _creds
+        _sa_dict = _json.loads(base64.b64decode(b64_raw.strip()).decode())
+        _cred = _creds.Certificate(_sa_dict)
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(_cred)
+        from app.core import fcm as _fcm_mod
+        _fcm_mod._initialized = True
+    except Exception as _e:
+        fcm_init_error = str(_e)
+
     from app.core.fcm import _init
     fcm_ready = _init()
     if not fcm_ready:
-        raise HTTPException(status_code=500, detail={"message": "FCM chưa khởi tạo được", "b64_diagnostics": b64_info})
+        raise HTTPException(status_code=500, detail={"message": "FCM chưa khởi tạo được", "b64_diagnostics": b64_info, "init_error": fcm_init_error})
 
     stale = await send_push(tokens, title, message, {"test": "true"})
     return {
