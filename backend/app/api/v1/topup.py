@@ -148,10 +148,10 @@ async def payment_webhook(
       - data[].description : nội dung chuyển khoản (chứa order_code)
       - data[].is_incoming : True nếu là tiền vào
     """
-    # Verify Casso Apikey: header dạng "Apikey <token>"
+    # Verify Casso secret — Casso gửi raw key hoặc "Apikey <key>"
     if settings.payment_webhook_secret:
-        expected = f"Apikey {settings.payment_webhook_secret}"
-        if authorization != expected:
+        secret = settings.payment_webhook_secret
+        if authorization not in (secret, f"Apikey {secret}"):
             raise HTTPException(401, "Invalid webhook secret")
 
     import re
