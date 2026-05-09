@@ -166,5 +166,16 @@ async def test_push(
     if not tokens:
         raise HTTPException(status_code=404, detail="Không tìm thấy device token nào")
 
-    await send_push(tokens, title, message, {"test": "true"})
-    return {"tokens_found": len(tokens), "tokens": tokens, "status": "sent"}
+    from app.core.fcm import _init
+    fcm_ready = _init()
+    if not fcm_ready:
+        raise HTTPException(status_code=500, detail="FCM chưa khởi tạo được — kiểm tra FIREBASE_SERVICE_ACCOUNT_B64")
+
+    stale = await send_push(tokens, title, message, {"test": "true"})
+    return {
+        "fcm_initialized": fcm_ready,
+        "tokens_found": len(tokens),
+        "tokens_sent": len(tokens) - len(stale),
+        "tokens_stale": stale,
+        "status": "sent",
+    }
