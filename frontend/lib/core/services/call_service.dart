@@ -194,11 +194,24 @@ class CallService {
       }
     }
 
-    // Deduplicate: WebSocket and FCM can both deliver the same call notification.
+    // In-isolate dedup (WS + FCM arriving in the same isolate).
     if (_activeCallIds.contains(callId)) {
-      debugPrint('[CallService] duplicate showIncomingCall for $callId — ignored');
+      debugPrint('[CallService] duplicate showIncomingCall for $callId — ignored (in-isolate)');
       return;
     }
+
+    // Cross-isolate dedup: FCM background handler runs in a separate Dart isolate,
+    // so _activeCallIds above won't catch it. Query the native CallKit layer instead
+    // — it is shared across all isolates.
+    try {
+      final active = await FlutterCallkitIncoming.activeCalls();
+      if (active is List && active.any((c) => c['id'] == callId)) {
+        debugPrint('[CallService] duplicate showIncomingCall for $callId — ignored (cross-isolate)');
+        _activeCallIds.add(callId); // sync local set so subsequent in-isolate checks work
+        return;
+      }
+    } catch (_) {}
+
     _activeCallIds.add(callId);
 
     // If there are stale calls from a previous session that the user dismissed
