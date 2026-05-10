@@ -183,7 +183,10 @@ async def initiate_call(
     # users get it immediately without waiting for FCM delivery.
     await r.publish(_user_channel(recipient_id), json.dumps(call_data))
 
-    # Android + iOS foreground: FCM data-only (high priority)
+    # Android + iOS foreground: FCM data-only (high priority).
+    # ttl_seconds=40: queue for up to 40s so brief offline/handoff periods
+    # (WiFi → LTE, screen-off Doze exit) don't silently drop the call.
+    # The client-side age check (_CALL_RING_TTL_SECONDS=45) rejects stale rings.
     stale: list[str] = []
     if fcm_tokens:
         stale = await send_push(
@@ -192,6 +195,7 @@ async def initiate_call(
             body="Đang gọi...",
             data=call_data,
             data_only=True,
+            ttl_seconds=40,
         )
 
     # iOS background/killed: APNs VoIP (PushKit) — guaranteed to wake app

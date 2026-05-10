@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import os
+import time
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -59,8 +60,13 @@ async def send_push(
     body: str,
     data: dict | None = None,
     data_only: bool = False,
+    ttl_seconds: int | None = None,
 ) -> list[str]:
     """Send FCM push notification to a list of device tokens.
+
+    ttl_seconds overrides the default TTL (0 for data_only, 4 weeks otherwise).
+    Pass ttl_seconds=40 for call notifications so brief offline periods don't
+    cause the message to be dropped before the device reconnects.
 
     Returns a list of tokens that are permanently invalid and should be
     deleted from the database. Caller is responsible for the cleanup.
@@ -71,26 +77,37 @@ async def send_push(
         return []
     try:
         from firebase_admin import messaging
+
+        # TTL: caller-specified > data_only default (0) > notification default (4w)
+        if ttl_seconds is not None:
+            android_ttl = timedelta(seconds=ttl_seconds)
+            apns_expiration = str(int(time.time()) + ttl_seconds)
+        elif data_only:
+            android_ttl = timedelta(seconds=0)
+            apns_expiration = "0"
+        else:
+            android_ttl = timedelta(weeks=4)
+            apns_expiration = ""
+
+        use_apns_data_config = data_only or ttl_seconds is not None
+
         message = messaging.MulticastMessage(
             tokens=tokens,
             notification=None if data_only else messaging.Notification(title=title, body=body),
             data={k: str(v) for k, v in (data or {}).items()},
             android=messaging.AndroidConfig(
                 priority="high",
-                # TTL=0: drop immediately if device is unreachable instead of queuing.
-                # Prevents B receiving a stale call ring minutes after A already hung up.
-                ttl=timedelta(seconds=0) if data_only else timedelta(weeks=4),
+                ttl=android_ttl,
             ),
             apns=messaging.APNSConfig(
                 headers={
                     "apns-priority": "10",
-                    # apns-expiration=0: same as TTL=0 — APNs drops if not deliverable now.
-                    "apns-expiration": "0" if data_only else "",
+                    "apns-expiration": apns_expiration,
                 },
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(content_available=True),
                 ),
-            ) if data_only else None,
+            ) if use_apns_data_config else None,
         )
         resp = messaging.send_each_for_multicast(message)
         logger.info("FCM sent %d/%d success (data_only=%s)", resp.success_count, len(tokens), data_only)

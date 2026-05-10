@@ -64,7 +64,10 @@ class CallService {
   // Tracks missed-call callIds already shown so WS + FCM don't both show it.
   static final Set<String> _missedCallIds = {};
 
-  static void markMissedCallSeen(String callId) => _missedCallIds.add(callId);
+  static void markMissedCallSeen(String callId) {
+    _missedCallIds.add(callId);
+    _storage.write(key: '_missed_seen_$callId', value: '1').ignore();
+  }
 
   // Tracks callIds that reached the talking state (both sides connected).
   // A missed call notification must never be shown for a connected call.
@@ -431,28 +434,34 @@ class CallService {
     if (initiatedAt != null) {
       final ageSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000 - initiatedAt;
       if (ageSeconds > _CALL_RING_TTL_SECONDS) {
-        debugPrint('[CallService] ignoring stale call ($ageSeconds s old): $callId');
+        debugPrint('[CallService] stale call ($ageSeconds s old): $callId — showing missed call');
+        if (callId.isNotEmpty) _activeCallIds.add(callId);
+        // Let showMissedCallNotification handle dedup internally.
+        showMissedCallNotification(
+          callerName: callerName,
+          orderId: orderId.isNotEmpty ? orderId : null,
+          callId: callId.isNotEmpty ? callId : null,
+        );
         return;
       }
     }
 
-    // In-isolate dedup.
+    // In-isolate dedup — claim slot immediately before any await so concurrent
+    // async paths (WS + FCM both in foreground) can't both slip through.
     if (_activeCallIds.contains(callId)) {
       debugPrint('[CallService] duplicate showIncomingCall for $callId — ignored (in-isolate)');
       return;
     }
+    _activeCallIds.add(callId);
 
     // Cross-isolate dedup via native CallKit layer.
     try {
       final active = await FlutterCallkitIncoming.activeCalls();
       if (active is List && active.any((c) => c['id'] == callId)) {
         debugPrint('[CallService] duplicate showIncomingCall for $callId — ignored (cross-isolate)');
-        _activeCallIds.add(callId);
         return;
       }
     } catch (_) {}
-
-    _activeCallIds.add(callId);
 
     // Cache call data in memory (same isolate) — reliable Accept fallback.
     _inMemoryCallCache[callId] = {
@@ -555,10 +564,21 @@ class CallService {
         return;
       }
       if (_missedCallIds.contains(callId)) {
-        debugPrint('[CallService] duplicate missed call $callId — ignored');
+        debugPrint('[CallService] duplicate missed call $callId — ignored (in-memory)');
         return;
       }
+      // Cross-isolate dedup: background FCM handler and main isolate each have
+      // their own _missedCallIds. SecureStorage is shared across all isolates.
+      try {
+        final seen = await _storage.read(key: '_missed_seen_$callId');
+        if (seen != null) {
+          debugPrint('[CallService] duplicate missed call $callId — ignored (cross-isolate)');
+          _missedCallIds.add(callId);
+          return;
+        }
+      } catch (_) {}
       _missedCallIds.add(callId);
+      _storage.write(key: '_missed_seen_$callId', value: '1').ignore();
     }
     const channelId = 'shopho_missed_calls';
     final plugin = FlutterLocalNotificationsPlugin();
