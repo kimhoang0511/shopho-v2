@@ -298,23 +298,23 @@ async def cancel_call(
         )
         await prune_stale_tokens(db, stale)
 
-    # If A (caller) is the one cancelling and B hadn't answered yet → missed call.
-    if is_caller_cancelling:
+    # If A (caller) is cancelling and B hadn't answered → send missed call via FCM only.
+    # Deliberately skip WebSocket to avoid duplicate: FCM covers background/killed,
+    # and the foreground onMessage handler shows the local notification for the online case.
+    if is_caller_cancelling and fcm_tokens:
         missed_data = {
             "type": "missed_call",
             "call_id": call_id,
             "order_id": str(order_id),
             "caller_name": caller_name_for_missed,
         }
-        await r.publish(_user_channel(recipient_id), json.dumps(missed_data))
-        if fcm_tokens:
-            stale = await send_push(
-                tokens=fcm_tokens,
-                title=f"Cuộc gọi nhỡ từ {caller_name_for_missed}",
-                body="Bạn vừa có một cuộc gọi nhỡ",
-                data=missed_data,
-            )
-            await prune_stale_tokens(db, stale)
+        stale = await send_push(
+            tokens=fcm_tokens,
+            title=f"Cuộc gọi nhỡ từ {caller_name_for_missed}",
+            body="Bạn vừa có một cuộc gọi nhỡ",
+            data=missed_data,
+        )
+        await prune_stale_tokens(db, stale)
 
     return {"ok": True}
 

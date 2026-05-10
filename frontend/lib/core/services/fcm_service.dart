@@ -133,6 +133,13 @@ class FcmService {
         }
         return;
       }
+      // Missed call: FCM carries the notification payload so the system shows it
+      // automatically in background/killed. In foreground we must show it manually.
+      if (message.data['type'] == 'missed_call') {
+        final callerName = message.data['caller_name'] as String? ?? 'Người gọi';
+        CallService.showMissedCallNotification(callerName: callerName);
+        return;
+      }
       final notification = message.notification;
       if (notification == null) return;
       final orderId = message.data['order_id'] as String?;
