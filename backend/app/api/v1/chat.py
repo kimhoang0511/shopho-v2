@@ -312,8 +312,12 @@ async def cancel_call(
             "caller_name": caller_name_for_missed,
         }
         missed_json = json.dumps(missed_data)
-        # Store in Redis so WS reconnect can deliver it (covers FCM delay / screen-off case).
-        await r.set(_pending_missed_call_key(recipient_id), missed_json, ex=_MISSED_CALL_TTL)
+        # Store in Redis list (max 3) so WS reconnect can deliver all missed calls.
+        # LPUSH prepends newest first; LTRIM keeps only the 3 most recent.
+        key = _pending_missed_call_key(recipient_id)
+        await r.lpush(key, missed_json)
+        await r.ltrim(key, 0, 2)
+        await r.expire(key, _MISSED_CALL_TTL)
         # FCM: delivers when device wakes up (background/killed). Foreground handled by onMessage.
         if fcm_tokens:
             stale = await send_push(
@@ -503,15 +507,18 @@ async def ws_user_events(
         except Exception:
             pass
 
-    # Deliver missed call notification if B was offline when A hung up.
-    pending_missed_raw = await r.get(_pending_missed_call_key(user_id))
-    if pending_missed_raw:
-        try:
-            await websocket.send_text(pending_missed_raw)
-            await r.delete(_pending_missed_call_key(user_id))
-            logger.info("Delivered pending missed call to user %s on WS reconnect", user_id)
-        except Exception:
-            pass
+    # Deliver all pending missed calls (max 3) accumulated while B was offline.
+    # LRANGE returns newest-first (LPUSH order); deliver oldest-first by reversing.
+    key = _pending_missed_call_key(user_id)
+    missed_items = await r.lrange(key, 0, -1)
+    if missed_items:
+        await r.delete(key)
+        for item in reversed(missed_items):
+            try:
+                await websocket.send_text(item)
+            except Exception:
+                break
+        logger.info("Delivered %d pending missed call(s) to user %s", len(missed_items), user_id)
 
     async def _redis_to_ws() -> None:
         try:
