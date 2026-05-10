@@ -644,7 +644,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      _InfoRow(Icons.monetization_on_outlined, 'Trả tiền mua/ship hộ',
+                      _InfoRow(Icons.monetization_on_outlined, 'Tiền công mua/ship hộ',
                           '${order.goldReward.toStringAsFixed(0)}K',
                           valueStyle: TextStyle(color: cs.tertiary, fontWeight: FontWeight.bold, fontSize: 18)),
                       const Divider(height: 24),
@@ -796,7 +796,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: OutlinedButton.icon(
-              onPressed: _proposing ? null : _proposeGold,
+              onPressed: (_proposing || !hasSlots) ? null : _proposeGold,
               icon: _proposing
                   ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.trending_up_rounded, size: 18),
