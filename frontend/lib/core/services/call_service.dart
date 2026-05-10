@@ -290,7 +290,10 @@ class CallService {
     return true;
   }
 
-  static Future<void> showMissedCallNotification({required String callerName}) async {
+  static Future<void> showMissedCallNotification({
+    required String callerName,
+    String? orderId,
+  }) async {
     const channelId = 'shopho_missed_calls';
     final plugin = FlutterLocalNotificationsPlugin();
     await plugin.show(
@@ -311,6 +314,7 @@ class CallService {
           presentSound: true,
         ),
       ),
+      payload: orderId,
     );
   }
 }

@@ -137,7 +137,8 @@ class FcmService {
       // automatically in background/killed. In foreground we must show it manually.
       if (message.data['type'] == 'missed_call') {
         final callerName = message.data['caller_name'] as String? ?? 'Người gọi';
-        CallService.showMissedCallNotification(callerName: callerName);
+        final orderId = message.data['order_id'] as String?;
+        CallService.showMissedCallNotification(callerName: callerName, orderId: orderId);
         return;
       }
       final notification = message.notification;
