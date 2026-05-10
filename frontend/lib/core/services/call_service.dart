@@ -50,7 +50,11 @@ class CallService {
   // (in which case AppLifecycleState.resumed never fires).
   static final acceptedCallNotifier = ValueNotifier<Map<String, String>?>(null);
 
-  // Tracks callIds currently being shown to deduplicate WebSocket + FCM double-delivery.
+  // Must match _CALL_RING_TTL on the backend (seconds).
+  static const int _CALL_RING_TTL_SECONDS = 45;
+
+  // Tracks callIds seen in this session. Never cleared — keeps dedup active
+  // even after decline/timeout so delayed FCM can't re-show the same call.
   static final Set<String> _activeCallIds = {};
 
   // Prefetched LiveKit token for B (recipient). Started on Accept so the token
@@ -133,11 +137,9 @@ class CallService {
 
       case Event.actionCallDecline:
       case Event.actionCallTimeout:
-        _activeCallIds.remove(callId);
-        // Dismiss the notification immediately — don't wait for the network
-        // request. Without this, endAllCalls() would be delayed up to 8s
-        // (connectTimeout) while _sendCancel waits for the server, making the
-        // notification appear frozen ("no response").
+        // Keep callId in _activeCallIds — do NOT remove it. This prevents
+        // delayed FCM/WS deliveries of the same call from re-showing the UI
+        // after the user has already declined or the ring timed out.
         await FlutterCallkitIncoming.endAllCalls();
         final extra = event.body['extra'] as Map?;
         final orderId = extra?['order_id'] as String?;
@@ -147,7 +149,7 @@ class CallService {
         break;
 
       case Event.actionCallEnded:
-        _activeCallIds.remove(callId);
+        // Keep callId in _activeCallIds for the same reason.
         await FlutterCallkitIncoming.endAllCalls();
         break;
 
@@ -179,7 +181,18 @@ class CallService {
     required String orderId,
     required String livekitUrl,
     required String roomName,
+    int? initiatedAt,
   }) async {
+    // Reject calls that are too old — handles delayed FCM and stale Redis
+    // pending_calls delivered on WS reconnect after the ring window expired.
+    if (initiatedAt != null) {
+      final ageSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000 - initiatedAt;
+      if (ageSeconds > _CALL_RING_TTL_SECONDS) {
+        debugPrint('[CallService] ignoring stale call ($ageSeconds s old): $callId');
+        return;
+      }
+    }
+
     // Deduplicate: WebSocket and FCM can both deliver the same call notification.
     if (_activeCallIds.contains(callId)) {
       debugPrint('[CallService] duplicate showIncomingCall for $callId — ignored');

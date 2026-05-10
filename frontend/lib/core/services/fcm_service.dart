@@ -20,12 +20,14 @@ final _localNotif = FlutterLocalNotificationsPlugin();
 Future<void> _backgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   if (message.data['type'] == 'call') {
+    final initiatedAt = int.tryParse(message.data['initiated_at'] ?? '');
     await CallService.showIncomingCall(
       callId: message.data['call_id'] ?? '',
       callerName: message.data['caller_name'] ?? 'Người gọi',
       orderId: message.data['order_id'] ?? '',
       livekitUrl: message.data['livekit_url'] ?? '',
       roomName: message.data['room_name'] ?? '',
+      initiatedAt: initiatedAt,
     );
   } else if (message.data['type'] == 'call_cancel') {
     final callId = message.data['call_id'] as String? ?? '';
@@ -109,12 +111,14 @@ class FcmService {
     FirebaseMessaging.onMessage.listen((message) {
       // Call messages: show callkit UI, not a regular notification
       if (message.data['type'] == 'call') {
+        final initiatedAt = int.tryParse(message.data['initiated_at'] ?? '');
         CallService.showIncomingCall(
           callId: message.data['call_id'] ?? '',
           callerName: message.data['caller_name'] ?? 'Người gọi',
           orderId: message.data['order_id'] ?? '',
           livekitUrl: message.data['livekit_url'] ?? '',
           roomName: message.data['room_name'] ?? '',
+          initiatedAt: initiatedAt,
         );
         return;
       }

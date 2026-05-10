@@ -16,18 +16,20 @@ class UserEventSocket {
   static Timer? _pingTimer;
   static Timer? _reconnectTimer;
   static bool _active = false;
+  static bool _connecting = false;
   static String? _token;
 
   static Future<void> connect(String accessToken) async {
     _token = accessToken;
     _active = true;
-    // Already connected — nothing to do.
-    if (_channel != null) return;
+    // Already connected or connecting — nothing to do.
+    if (_channel != null || _connecting) return;
     await _doConnect();
   }
 
   static void disconnect() {
     _active = false;
+    _connecting = false;
     _pingTimer?.cancel();
     _reconnectTimer?.cancel();
     _sub?.cancel();
@@ -37,8 +39,8 @@ class UserEventSocket {
   }
 
   static Future<void> _doConnect() async {
-    if (!_active || _token == null) return;
-
+    if (!_active || _token == null || _connecting) return;
+    _connecting = true;
     try {
       final uri = Uri.parse('$wsBaseUrl/ws/user/events?token=$_token');
       _channel = WebSocketChannel.connect(uri);
@@ -61,7 +63,10 @@ class UserEventSocket {
       });
     } catch (e) {
       debugPrint('[UserEventSocket] connect error: $e');
+      _channel = null;
       _scheduleReconnect();
+    } finally {
+      _connecting = false;
     }
   }
 
@@ -93,6 +98,7 @@ class UserEventSocket {
           orderId: data['order_id'] as String? ?? '',
           livekitUrl: data['livekit_url'] as String? ?? '',
           roomName: data['room_name'] as String? ?? '',
+          initiatedAt: data['initiated_at'] as int?,
         );
       } else if (type == 'call_cancel') {
         final callId = data['call_id'] as String? ?? '';

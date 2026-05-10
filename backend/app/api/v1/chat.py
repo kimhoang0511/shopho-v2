@@ -9,6 +9,7 @@ Chat feature:
 import asyncio
 import json
 import logging
+import time
 import uuid
 from datetime import timedelta
 
@@ -163,6 +164,7 @@ async def initiate_call(
         "caller_name": caller_name,
         "livekit_url": settings.livekit_url,
         "room_name": room,
+        "initiated_at": int(time.time()),
     }
 
     r = await get_redis()
@@ -449,10 +451,13 @@ async def ws_user_events(
     # Deliver any call that was initiated while this client was offline.
     # Subscribe first, then check — avoids a race where a new call arrives
     # between the Redis GET and the subscribe.
+    # Delete immediately after sending (consume pattern) so the next reconnect
+    # doesn't re-deliver the same call and spam the user.
     pending_raw = await r.get(_pending_call_key(user_id))
     if pending_raw:
         try:
             await websocket.send_text(pending_raw)
+            await r.delete(_pending_call_key(user_id))
             logger.info("Delivered pending call to user %s on WS reconnect", user_id)
         except Exception:
             pass
