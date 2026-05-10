@@ -21,6 +21,8 @@ class UserEventSocket {
   static Future<void> connect(String accessToken) async {
     _token = accessToken;
     _active = true;
+    // Already connected — nothing to do.
+    if (_channel != null) return;
     await _doConnect();
   }
 

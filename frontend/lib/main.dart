@@ -19,6 +19,7 @@ import 'features/orders/presentation/screens/my_orders_screen.dart';
 import 'features/orders/presentation/screens/order_detail_screen.dart';
 import 'core/services/call_service.dart';
 import 'core/services/fcm_service.dart';
+import 'core/services/user_event_socket.dart';
 import 'core/services/version_check_service.dart';
 import 'features/call/webrtc_call_screen.dart';
 import 'firebase_options.dart';
@@ -57,6 +58,13 @@ Future<void> _initServices() async {
     await CallService.init();
   } catch (e) {
     debugPrint('[main] CallService.init: $e');
+  }
+
+  // If user is already authenticated (app restarted without going through login),
+  // connect WebSocket now so pending calls from Redis are delivered immediately.
+  final existingToken = authTokenNotifier.value;
+  if (existingToken != null) {
+    UserEventSocket.connect(existingToken).ignore();
   }
 
   // Handle notification-driven launch (app was killed, user tapped notification)
@@ -147,11 +155,15 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Background/lock-screen accept: navigate once the app fully resumes.
-    // If the notifier listener already handled it, consumePendingAcceptedCall
-    // returns null and this is a no-op.
     if (state == AppLifecycleState.resumed) {
+      // Background/lock-screen accept: navigate once the app fully resumes.
       _navigatePendingCall();
+      // Reconnect WebSocket in case Android killed it while screen was off.
+      // If already connected, UserEventSocket.connect() is a no-op (reuses _active flag).
+      final token = authTokenNotifier.value;
+      if (token != null) {
+        UserEventSocket.connect(token).ignore();
+      }
     }
   }
 
