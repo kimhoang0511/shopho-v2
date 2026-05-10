@@ -74,6 +74,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
     _durationTimer?.cancel();
     _ringTimeout?.cancel();
     if (_callState == _CallState.talking) {
+      // Call was established — remote hung up normally, not a missed call.
       setState(() => _callState = _CallState.ended);
       Future.delayed(const Duration(seconds: 2), () => _hangup(sendCancel: false));
     } else {
@@ -87,6 +88,13 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
     if (cancelId != widget.callId && widget.callId.isNotEmpty) return;
     if (_disposed || !mounted) return;
     _ringTimeout?.cancel();
+    // Only show missed call if the call never reached talking state.
+    if (_callState != _CallState.talking) {
+      CallService.showMissedCallNotification(
+        callerName: widget.counterpartName,
+        callId: widget.callId.isNotEmpty ? widget.callId : null,
+      );
+    }
     setState(() => _callState = _CallState.noAnswer);
     Future.delayed(const Duration(seconds: 2), () => _hangup(sendCancel: false));
   }
@@ -151,16 +159,33 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
             _ringTimeout?.cancel();
             setState(() => _callState = _CallState.talking);
             _startDurationTimer();
+            if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+          }
+        })
+        ..on<TrackPublishedEvent>((e) {
+          if (e.publication.kind == TrackType.AUDIO &&
+              mounted &&
+              _callState != _CallState.talking) {
+            _ringTimeout?.cancel();
+            setState(() => _callState = _CallState.talking);
+            _startDurationTimer();
+            if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
           }
         })
         ..on<ParticipantDisconnectedEvent>((_) => _onRemoteDisconnect())
         ..on<RoomDisconnectedEvent>((_) => _onRemoteDisconnect());
 
-      // Remote participant already in room (recipient joins after caller)
-      if (_room.remoteParticipants.isNotEmpty && mounted) {
+      // Guard against stale room participants: only treat an already-present
+      // participant as "active" when they are actually publishing audio.
+      // A stale participant from a previous call has no audio tracks.
+      final activeRemote = _room.remoteParticipants.values.any(
+        (p) => p.audioTrackPublications.isNotEmpty,
+      );
+      if (activeRemote && mounted) {
         _ringTimeout?.cancel();
         setState(() => _callState = _CallState.talking);
         _startDurationTimer();
+        if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
       } else {
         // No-answer timeout: 45s no one joins → noAnswer state → auto hang up
         _ringTimeout = Timer(const Duration(seconds: 45), () {

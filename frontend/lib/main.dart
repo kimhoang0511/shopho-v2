@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -35,16 +36,32 @@ void main() async {
         await const FlutterSecureStorage().read(key: 'access_token');
   } catch (_) {}
 
-  // Start app immediately — do NOT await FCM / CallKit here.
-  // requestPermission() on iOS shows a system dialog that blocks the Dart
-  // isolate before runApp, causing a permanent white screen.
   runApp(const ProviderScope(child: ShopHoApp()));
 
-  // Initialize services in the background after first frame
+  // Initialize services after first frame — FCM requestPermission on iOS shows
+  // a system dialog that would block if awaited before runApp.
   _initServices();
 }
 
 Future<void> _initServices() async {
+  // 1. CallService first — EventChannel listener must be registered before
+  //    FcmService (which can block up to 15 s on first run).
+  try {
+    await CallService.init();
+  } catch (e) {
+    debugPrint('[main] CallService.init: $e');
+  }
+
+  // 2. Connect WebSocket immediately — do NOT wait for FcmService.
+  //    The backend delivers pending calls (Redis) as soon as WS connects.
+  //    If we wait for FcmService first, the 45-second call TTL may expire
+  //    before WS connects and the incoming call is never delivered.
+  final existingToken = authTokenNotifier.value;
+  if (existingToken != null) {
+    UserEventSocket.connect(existingToken).ignore();
+  }
+
+  // 3. FCM init can take up to 15 s (iOS permission dialog) — run last.
   try {
     await FcmService.init(
       DefaultFirebaseOptions.currentPlatform,
@@ -54,17 +71,24 @@ Future<void> _initServices() async {
     debugPrint('[main] FcmService.init: $e');
   }
 
-  try {
-    await CallService.init();
-  } catch (e) {
-    debugPrint('[main] CallService.init: $e');
-  }
-
-  // If user is already authenticated (app restarted without going through login),
-  // connect WebSocket now so pending calls from Redis are delivered immediately.
-  final existingToken = authTokenNotifier.value;
+  // Re-register FCM/VoIP tokens on every cold start — handles stale tokens
+  // that accumulate when Firebase rotates them while the app is killed.
+  // Only runs if the user is already authenticated (no re-login needed).
   if (existingToken != null) {
-    UserEventSocket.connect(existingToken).ignore();
+    try {
+      const storage = FlutterSecureStorage();
+      final base = await storage.read(key: 'api_base_url');
+      if (base != null) {
+        final dio = Dio(BaseOptions(
+          baseUrl: base,
+          headers: {'Authorization': 'Bearer $existingToken'},
+          connectTimeout: const Duration(seconds: 8),
+        ));
+        await FcmService.registerToken(dio);
+      }
+    } catch (e) {
+      debugPrint('[main] token re-registration error: $e');
+    }
   }
 
   // Handle notification-driven launch (app was killed, user tapped notification)
@@ -159,7 +183,6 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       // Background/lock-screen accept: navigate once the app fully resumes.
       _navigatePendingCall();
       // Reconnect WebSocket in case Android killed it while screen was off.
-      // If already connected, UserEventSocket.connect() is a no-op (reuses _active flag).
       final token = authTokenNotifier.value;
       if (token != null) {
         UserEventSocket.connect(token).ignore();
@@ -170,9 +193,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   void _navigatePendingCall() {
     final call = CallService.consumePendingAcceptedCall();
     if (call == null) return;
-    // Defer to next frame so the navigator is guaranteed to be mounted,
-    // regardless of whether we're called from a lifecycle event, the
-    // acceptedCallNotifier listener, or an initState postFrameCallback.
+    // Defer to next frame so the navigator is guaranteed to be mounted.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _router.push(
         '/call/${call['orderId']}',

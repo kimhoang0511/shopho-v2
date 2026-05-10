@@ -203,18 +203,18 @@ class _SlotBalanceCard extends StatelessWidget {
               ],
             ),
           ),
-          if (isEmpty)
+          if (slots != null)
             GestureDetector(
               onTap: onTopup,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade700,
+                  color: isEmpty ? Colors.red.shade700 : const Color(0xFF5B6AF0),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  'Nạp lượt',
-                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                child: Text(
+                  isEmpty ? 'Nạp lượt' : 'Nạp thêm',
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
             ),

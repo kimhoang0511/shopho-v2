@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -14,17 +18,13 @@ class CallService {
   static void registerDio(Dio dio) {
     _dio = dio;
     _baseUrl = dio.options.baseUrl;
-    // Persist base URL so _getOrBuildDio can reconstruct Dio after app kill.
     const FlutterSecureStorage().write(key: 'api_base_url', value: _baseUrl!);
   }
 
-  /// Returns an available Dio. Falls back to a fresh one built from the stored
-  /// auth token when the registered Dio is unavailable (e.g. app was killed).
   static Future<Dio?> _getOrBuildDio() async {
     if (_dio != null) return _dio;
     var base = _baseUrl;
     if (base == null) {
-      // App was killed — recover base URL from secure storage.
       base = await const FlutterSecureStorage().read(key: 'api_base_url');
     }
     if (base == null) return null;
@@ -47,8 +47,7 @@ class CallService {
   static Map<String, String>? _pendingAcceptedCall;
 
   // Fires whenever the user accepts a call so the root widget can navigate to
-  // the call screen immediately — even when the app is already in the foreground
-  // (in which case AppLifecycleState.resumed never fires).
+  // the call screen immediately — even when the app is already in the foreground.
   static final acceptedCallNotifier = ValueNotifier<Map<String, String>?>(null);
 
   // Must match _CALL_RING_TTL on the backend (seconds).
@@ -58,20 +57,30 @@ class CallService {
   // even after decline/timeout so delayed FCM can't re-show the same call.
   static final Set<String> _activeCallIds = {};
 
+  // Tracks callIds that have been fully accepted and navigation triggered.
+  // Prevents double-navigation when EventChannel and MethodChannel both fire.
+  static final Set<String> _handledAcceptCallIds = {};
+
   // Tracks missed-call callIds already shown so WS + FCM don't both show it.
   static final Set<String> _missedCallIds = {};
 
-  // Called from FCM background isolate to pre-mark a missed call as seen,
-  // preventing the WS reconnect from showing a duplicate notification.
   static void markMissedCallSeen(String callId) => _missedCallIds.add(callId);
+
+  // Tracks callIds that reached the talking state (both sides connected).
+  // A missed call notification must never be shown for a connected call.
+  static final Set<String> _connectedCallIds = {};
+
+  static void markCallConnected(String callId) {
+    if (callId.isNotEmpty) _connectedCallIds.add(callId);
+  }
+
+  static bool _initialized = false;
 
   // Prefetched LiveKit token for B (recipient). Started on Accept so the token
   // is ready (or close to ready) by the time WebRtcCallScreen._init() runs.
   static Future<Map<String, String>?>? _prefetchedTokenFuture;
   static String? _prefetchedTokenOrderId;
 
-  /// Called by WebRtcCallScreen to consume the prefetched token.
-  /// Returns null if no prefetch was started or orderId doesn't match.
   static Future<Map<String, String>?>? consumePrefetchedToken(String orderId) {
     if (_prefetchedTokenOrderId != orderId) return null;
     _prefetchedTokenOrderId = null;
@@ -106,8 +115,201 @@ class CallService {
     return call;
   }
 
+  // ── In-memory call-data cache ──────────────────────────────────────────────
+  // Populated when showIncomingCall() runs in the main isolate (WS / FCM
+  // foreground). Gives _handleEvent a reliable source for orderId etc. when
+  // event.body['extra'] is null on some Android devices.
+  static final Map<String, Map<String, String>> _inMemoryCallCache = {};
+
+  // ── Persistent call-data cache ─────────────────────────────────────────────
+  // Covers the killed-app / FCM background isolate case where the main isolate
+  // has no in-memory state. Written by showIncomingCall() from any isolate.
+  static const _storage = FlutterSecureStorage();
+
+  static Future<void> _saveCallData(
+      String callId, String orderId, String callerName, String livekitUrl) async {
+    try {
+      await _storage.write(
+        key: '_call_$callId',
+        value: jsonEncode({'o': orderId, 'n': callerName, 'u': livekitUrl}),
+      );
+    } catch (_) {}
+  }
+
+  static Future<Map<String, String>?> _loadCallData(String callId) async {
+    try {
+      final raw = await _storage.read(key: '_call_$callId');
+      if (raw == null) return null;
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      return {
+        'order_id': m['o'] as String? ?? '',
+        'caller_name': m['n'] as String? ?? '',
+        'livekit_url': m['u'] as String? ?? '',
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _clearCallData(String callId) async {
+    try {
+      await _storage.delete(key: '_call_$callId');
+    } catch (_) {}
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+
+  static const _nativeChannel = MethodChannel('shopho/call_native');
+
   static Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
     FlutterCallkitIncoming.onEvent.listen(_handleEvent);
+
+    if (Platform.isAndroid) {
+      FlutterCallkitIncoming.requestFullIntentPermission();
+
+      // Hướng 2: MethodChannel handler for when MainActivity detects an Accept
+      // intent AFTER Flutter is already running (app was in background).
+      _nativeChannel.setMethodCallHandler((call) async {
+        if (call.method == 'callAccepted') {
+          final callId = call.arguments as String? ?? '';
+          if (callId.isNotEmpty) await _handleNativeAccept(callId);
+        }
+      });
+
+      // Poll for accept that arrived during cold start (app was killed).
+      // MainActivity stores the callId in SharedPreferences; we read it here
+      // once the engine is ready.
+      try {
+        final callId = await _nativeChannel.invokeMethod<String?>('getPendingAcceptCallId');
+        if (callId != null && callId.isNotEmpty) {
+          await _handleNativeAccept(callId);
+          return; // skip redundant _recoverMissedAcceptedCall below
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: plugin-based recovery for non-Android-14 accept paths.
+    _recoverMissedAcceptedCall();
+  }
+
+  // Fallback: called when MethodChannel fires callAccepted (cold-start) or
+  // when EventChannel event is dropped. Does NOT speculatively claim
+  // _handledAcceptCallIds — only claims after confirming data exists, so that
+  // a concurrent EventChannel arrival can still win the race.
+  static Future<void> _handleNativeAccept(String callId) async {
+    if (_handledAcceptCallIds.contains(callId)) return;
+
+    String? orderId;
+    String callerName = 'Người gọi';
+    String livekitUrl = '';
+
+    // 1. In-memory cache (WS / FCM-foreground path in same isolate).
+    final cached = _inMemoryCallCache[callId];
+    if (cached != null) {
+      orderId = cached['order_id'];
+      if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
+      if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
+    }
+
+    // 2. Persistent storage (killed-app or FCM background isolate).
+    if (orderId == null || orderId.isEmpty) {
+      final saved = await _loadCallData(callId);
+      if (saved != null) {
+        orderId = saved['order_id'];
+        if ((saved['caller_name'] ?? '').isNotEmpty) callerName = saved['caller_name']!;
+        if ((saved['livekit_url'] ?? '').isNotEmpty) livekitUrl = saved['livekit_url']!;
+      }
+    }
+
+    if (orderId == null || orderId.isEmpty) {
+      // No data found — let EventChannel path handle it if/when it arrives.
+      debugPrint('[CallService] _handleNativeAccept: no data for $callId, deferring to EventChannel');
+      return;
+    }
+
+    // Only claim after we have data, and re-check in case EventChannel won.
+    if (_handledAcceptCallIds.contains(callId)) return;
+    _handledAcceptCallIds.add(callId);
+
+    debugPrint('[CallService] native accept callId=$callId orderId=$orderId');
+    _activeCallIds.add(callId);
+    _inMemoryCallCache.remove(callId);
+    _clearCallData(callId).ignore();
+    _prefetchRecipientToken(orderId);
+    await Permission.microphone.request();
+
+    final callInfo = {
+      'orderId': orderId,
+      'callerName': callerName,
+      'livekitUrl': livekitUrl,
+      'callId': callId,
+    };
+    _pendingAcceptedCall = callInfo;
+    acceptedCallNotifier.value = callInfo;
+  }
+
+  static Future<void> _recoverMissedAcceptedCall() async {
+    try {
+      final active = await FlutterCallkitIncoming.activeCalls();
+      if (active is! List || active.isEmpty) return;
+
+      for (final call in active) {
+        final callId = call['id'] as String? ?? '';
+        if (callId.isEmpty) continue;
+
+        final isAccepted = call['isAccepted'] as bool? ?? false;
+        if (!isAccepted) continue;
+
+        // Already handled by the normal EventChannel path.
+        if (_activeCallIds.contains(callId)) continue;
+        if (_pendingAcceptedCall?['callId'] == callId) continue;
+
+        final extra = call['extra'] as Map?;
+        String? orderId = extra?['order_id'] as String?;
+        String callerName = extra?['caller_name'] as String? ?? 'Người gọi';
+        String livekitUrl = extra?['livekit_url'] as String? ?? '';
+
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          final cached = _inMemoryCallCache[callId];
+          if (cached != null) {
+            orderId = cached['order_id'];
+            if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
+            if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
+          }
+        }
+
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          final saved = await _loadCallData(callId);
+          if (saved != null) {
+            orderId = saved['order_id'];
+            if ((saved['caller_name'] ?? '').isNotEmpty) callerName = saved['caller_name']!;
+            if ((saved['livekit_url'] ?? '').isNotEmpty) livekitUrl = saved['livekit_url']!;
+          }
+        }
+
+        if (orderId != null && orderId.isNotEmpty) {
+          debugPrint('[CallService] recovered accepted call (Android 14): $callId orderId=$orderId');
+          _activeCallIds.add(callId);
+          _inMemoryCallCache.remove(callId);
+          _clearCallData(callId).ignore();
+          _prefetchRecipientToken(orderId);
+          await Permission.microphone.request();
+          final callInfo = {
+            'orderId': orderId,
+            'callerName': callerName,
+            'livekitUrl': livekitUrl,
+            'callId': callId,
+          };
+          _pendingAcceptedCall = callInfo;
+          acceptedCallNotifier.value = callInfo;
+          break; // one call at a time
+        }
+      }
+    } catch (e) {
+      debugPrint('[CallService] _recoverMissedAcceptedCall error: $e');
+    }
   }
 
   static void _handleEvent(CallEvent? event) async {
@@ -116,18 +318,41 @@ class CallService {
     switch (event.event) {
       case Event.actionCallAccept:
         _activeCallIds.remove(callId);
+        if (_handledAcceptCallIds.contains(callId)) break;
+        _handledAcceptCallIds.add(callId);
         final extra = event.body['extra'] as Map?;
-        final orderId = extra?['order_id'] as String?;
-        final callerName = extra?['caller_name'] as String? ?? 'Người gọi';
-        final livekitUrl = extra?['livekit_url'] as String? ?? '';
-        if (orderId != null) {
-          // Start fetching the LiveKit token immediately — runs in parallel
-          // with the permission dialog so both resolve before _init() needs them.
+        String? orderId = extra?['order_id'] as String?;
+        String callerName = extra?['caller_name'] as String? ?? 'Người gọi';
+        String livekitUrl = extra?['livekit_url'] as String? ?? '';
+
+        // Fallback 1: in-memory cache (main-isolate WS / FCM-foreground path).
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          final cached = _inMemoryCallCache[callId];
+          if (cached != null) {
+            orderId = cached['order_id'];
+            if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
+            if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
+            debugPrint('[CallService] extra from memory cache — orderId=$orderId');
+          }
+        }
+
+        // Fallback 2: persistent storage (killed-app / FCM background isolate).
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          final saved = await _loadCallData(callId);
+          if (saved != null) {
+            orderId = saved['order_id'];
+            if ((saved['caller_name'] ?? '').isNotEmpty) callerName = saved['caller_name']!;
+            if ((saved['livekit_url'] ?? '').isNotEmpty) livekitUrl = saved['livekit_url']!;
+            debugPrint('[CallService] extra from storage — orderId=$orderId');
+          }
+        }
+
+        if (orderId != null && orderId.isNotEmpty) {
+          _inMemoryCallCache.remove(callId);
+          _clearCallData(callId).ignore();
           _prefetchRecipientToken(orderId);
-          // Await mic permission before navigating. On fresh install the dialog
-          // must be granted first — otherwise LocalAudioTrack.create() throws and
-          // the call screen immediately pops itself. On subsequent calls this
-          // resolves instantly because the permission is already granted.
+          // Await mic permission before navigating. On first install the dialog
+          // must be granted first; on subsequent calls this resolves instantly.
           await Permission.microphone.request();
           final callInfo = {
             'orderId': orderId,
@@ -135,19 +360,18 @@ class CallService {
             'livekitUrl': livekitUrl,
             'callId': callId,
           };
-          // Keep for lifecycle-based fallback (background/killed app).
+          // Lifecycle-based fallback (background / lock-screen accept).
           _pendingAcceptedCall = callInfo;
-          // Also notify immediately so foreground apps can navigate right away
-          // without waiting for an AppLifecycleState.resumed event.
+          // Immediate signal for foreground case (no lifecycle event fired).
           acceptedCallNotifier.value = callInfo;
         }
         break;
 
       case Event.actionCallDecline:
       case Event.actionCallTimeout:
-        // Keep callId in _activeCallIds — do NOT remove it. This prevents
-        // delayed FCM/WS deliveries of the same call from re-showing the UI
-        // after the user has already declined or the ring timed out.
+        // Keep callId in _activeCallIds — prevents delayed FCM/WS re-showing.
+        _inMemoryCallCache.remove(callId);
+        _clearCallData(callId).ignore();
         await FlutterCallkitIncoming.endAllCalls();
         final extra = event.body['extra'] as Map?;
         final orderId = extra?['order_id'] as String?;
@@ -157,8 +381,24 @@ class CallService {
         break;
 
       case Event.actionCallEnded:
-        // Keep callId in _activeCallIds for the same reason.
+        // Fired when user taps "Kết thúc" in the ongoing call notification.
+        // Send cancel to backend so the other party knows the call ended.
+        final endedExtra = event.body['extra'] as Map?;
+        String? endedOrderId = endedExtra?['order_id'] as String?;
+        if ((endedOrderId == null || endedOrderId.isEmpty) && callId.isNotEmpty) {
+          final cached = _inMemoryCallCache[callId];
+          if (cached != null) endedOrderId = cached['order_id'];
+        }
+        if ((endedOrderId == null || endedOrderId.isEmpty) && callId.isNotEmpty) {
+          final saved = await _loadCallData(callId);
+          if (saved != null) endedOrderId = saved['order_id'];
+        }
+        _inMemoryCallCache.remove(callId);
+        _clearCallData(callId).ignore();
         await FlutterCallkitIncoming.endAllCalls();
+        if (endedOrderId != null && endedOrderId.isNotEmpty && callId.isNotEmpty) {
+          _sendCancel(endedOrderId, callId).ignore();
+        }
         break;
 
       default:
@@ -166,9 +406,6 @@ class CallService {
     }
   }
 
-  /// Send call-cancel to backend. Uses registered Dio or builds a fallback one
-  /// from the stored auth token (covers the case where the app was killed and
-  /// the event fires before Dio is registered again).
   static Future<void> _sendCancel(String orderId, String callId) async {
     try {
       final dio = await _getOrBuildDio();
@@ -191,8 +428,6 @@ class CallService {
     required String roomName,
     int? initiatedAt,
   }) async {
-    // Reject calls that are too old — handles delayed FCM and stale Redis
-    // pending_calls delivered on WS reconnect after the ring window expired.
     if (initiatedAt != null) {
       final ageSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000 - initiatedAt;
       if (ageSeconds > _CALL_RING_TTL_SECONDS) {
@@ -201,30 +436,34 @@ class CallService {
       }
     }
 
-    // In-isolate dedup (WS + FCM arriving in the same isolate).
+    // In-isolate dedup.
     if (_activeCallIds.contains(callId)) {
       debugPrint('[CallService] duplicate showIncomingCall for $callId — ignored (in-isolate)');
       return;
     }
 
-    // Cross-isolate dedup: FCM background handler runs in a separate Dart isolate,
-    // so _activeCallIds above won't catch it. Query the native CallKit layer instead
-    // — it is shared across all isolates.
+    // Cross-isolate dedup via native CallKit layer.
     try {
       final active = await FlutterCallkitIncoming.activeCalls();
       if (active is List && active.any((c) => c['id'] == callId)) {
         debugPrint('[CallService] duplicate showIncomingCall for $callId — ignored (cross-isolate)');
-        _activeCallIds.add(callId); // sync local set so subsequent in-isolate checks work
+        _activeCallIds.add(callId);
         return;
       }
     } catch (_) {}
 
     _activeCallIds.add(callId);
 
-    // If there are stale calls from a previous session that the user dismissed
-    // without using Accept/Decline (e.g. swiped the app away or the process was
-    // killed), clean them up now and notify the caller side before showing the
-    // new incoming call.
+    // Cache call data in memory (same isolate) — reliable Accept fallback.
+    _inMemoryCallCache[callId] = {
+      'order_id': orderId,
+      'caller_name': callerName,
+      'livekit_url': livekitUrl,
+    };
+
+    // Also persist to storage for the killed-app / FCM background isolate case.
+    _saveCallData(callId, orderId, callerName, livekitUrl).ignore();
+
     await _cleanUpStaleCalls(skipCallId: callId);
 
     final params = CallKitParams(
@@ -239,8 +478,21 @@ class CallService {
         'livekit_url': livekitUrl,
         'room_name': roomName,
       },
+      // Ongoing call notification (shown after Accept, while in call).
+      // Provides a "Kết thúc" hang-up button — critical fallback when the
+      // call screen fails to appear on Android 14.
+      callingNotification: const NotificationParams(
+        showNotification: true,
+        subtitle: 'Đang kết nối...',
+        callbackText: 'Kết thúc',
+        isShowCallback: true,
+      ),
       android: const AndroidParams(
-        isCustomNotification: false,
+        // true → on Android 14+: uses CallStyle.forOngoingCall() for the
+        // ongoing notification, making the "Kết thúc" hang-up button always
+        // visible without needing to expand. Incoming still uses
+        // CallStyle.forIncomingCall() on Android 14 regardless of this flag.
+        isCustomNotification: true,
         isShowFullLockedScreen: true,
         ringtonePath: 'default',
         actionColor: '#5B6AF0',
@@ -259,8 +511,6 @@ class CallService {
     await FlutterCallkitIncoming.showCallkitIncoming(params);
   }
 
-  /// Ends any CallKit calls that are not the new incoming one, and sends cancel
-  /// signals to the backend for each stale call so the other party is notified.
   static Future<void> _cleanUpStaleCalls({required String skipCallId}) async {
     try {
       final raw = await FlutterCallkitIncoming.activeCalls();
@@ -279,9 +529,6 @@ class CallService {
           await _sendCancel(staleOrderId, id);
         }
       }
-      // Only end all calls when there were actually stale calls to clean up.
-      // Calling endAllCalls() when skipCallId is the only active call would
-      // kill the new incoming call and trigger a spurious actionCallDecline.
       if (foundStale) await FlutterCallkitIncoming.endAllCalls();
     } catch (e) {
       debugPrint('[CallService] _cleanUpStaleCalls error: $e');
@@ -302,8 +549,11 @@ class CallService {
     String? orderId,
     String? callId,
   }) async {
-    // Dedup: WS delivers on reconnect AND FCM may also arrive — show only once.
     if (callId != null) {
+      if (_connectedCallIds.contains(callId)) {
+        debugPrint('[CallService] call $callId was connected — skipping missed call notification');
+        return;
+      }
       if (_missedCallIds.contains(callId)) {
         debugPrint('[CallService] duplicate missed call $callId — ignored');
         return;
