@@ -106,6 +106,16 @@ class UserEventSocket {
         if (callId.isNotEmpty) {
           callCancelNotifier.value = callId;
         }
+      } else if (type == 'missed_call') {
+        final callerName = data['caller_name'] as String? ?? 'Người gọi';
+        final orderId = data['order_id'] as String?;
+        final callId = data['call_id'] as String?;
+        debugPrint('[UserEventSocket] missed_call from $callerName (callId=$callId)');
+        CallService.showMissedCallNotification(
+          callerName: callerName,
+          orderId: orderId,
+          callId: callId,
+        );
       }
     } catch (e) {
       debugPrint('[UserEventSocket] message parse error: $e');

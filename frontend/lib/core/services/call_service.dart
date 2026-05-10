@@ -58,6 +58,13 @@ class CallService {
   // even after decline/timeout so delayed FCM can't re-show the same call.
   static final Set<String> _activeCallIds = {};
 
+  // Tracks missed-call callIds already shown so WS + FCM don't both show it.
+  static final Set<String> _missedCallIds = {};
+
+  // Called from FCM background isolate to pre-mark a missed call as seen,
+  // preventing the WS reconnect from showing a duplicate notification.
+  static void markMissedCallSeen(String callId) => _missedCallIds.add(callId);
+
   // Prefetched LiveKit token for B (recipient). Started on Accept so the token
   // is ready (or close to ready) by the time WebRtcCallScreen._init() runs.
   static Future<Map<String, String>?>? _prefetchedTokenFuture;
@@ -293,7 +300,16 @@ class CallService {
   static Future<void> showMissedCallNotification({
     required String callerName,
     String? orderId,
+    String? callId,
   }) async {
+    // Dedup: WS delivers on reconnect AND FCM may also arrive — show only once.
+    if (callId != null) {
+      if (_missedCallIds.contains(callId)) {
+        debugPrint('[CallService] duplicate missed call $callId — ignored');
+        return;
+      }
+      _missedCallIds.add(callId);
+    }
     const channelId = 'shopho_missed_calls';
     final plugin = FlutterLocalNotificationsPlugin();
     await plugin.show(

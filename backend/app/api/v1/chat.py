@@ -53,7 +53,12 @@ def _pending_call_key(user_id: uuid.UUID) -> str:
     return f"shopho:pending_call:{user_id}"
 
 
-_CALL_RING_TTL = 45  # seconds — matches the ring timeout on the client side
+def _pending_missed_call_key(user_id: uuid.UUID) -> str:
+    return f"shopho:pending_missed_call:{user_id}"
+
+
+_CALL_RING_TTL = 45        # seconds — matches the ring timeout on the client side
+_MISSED_CALL_TTL = 10 * 60  # 10 minutes — window for B to open app and receive via WS
 
 
 def _room_name(order_id: uuid.UUID) -> str:
@@ -298,23 +303,26 @@ async def cancel_call(
         )
         await prune_stale_tokens(db, stale)
 
-    # If A (caller) is cancelling and B hadn't answered → send missed call via FCM only.
-    # Deliberately skip WebSocket to avoid duplicate: FCM covers background/killed,
-    # and the foreground onMessage handler shows the local notification for the online case.
-    if is_caller_cancelling and fcm_tokens:
+    # If A (caller) is cancelling and B hadn't answered → missed call.
+    if is_caller_cancelling:
         missed_data = {
             "type": "missed_call",
             "call_id": call_id,
             "order_id": str(order_id),
             "caller_name": caller_name_for_missed,
         }
-        stale = await send_push(
-            tokens=fcm_tokens,
-            title=f"Cuộc gọi nhỡ từ {caller_name_for_missed}",
-            body="Bạn vừa có một cuộc gọi nhỡ",
-            data=missed_data,
-        )
-        await prune_stale_tokens(db, stale)
+        missed_json = json.dumps(missed_data)
+        # Store in Redis so WS reconnect can deliver it (covers FCM delay / screen-off case).
+        await r.set(_pending_missed_call_key(recipient_id), missed_json, ex=_MISSED_CALL_TTL)
+        # FCM: delivers when device wakes up (background/killed). Foreground handled by onMessage.
+        if fcm_tokens:
+            stale = await send_push(
+                tokens=fcm_tokens,
+                title=f"Cuộc gọi nhỡ từ {caller_name_for_missed}",
+                body="Bạn vừa có một cuộc gọi nhỡ",
+                data=missed_data,
+            )
+            await prune_stale_tokens(db, stale)
 
     return {"ok": True}
 
@@ -492,6 +500,16 @@ async def ws_user_events(
             await websocket.send_text(pending_raw)
             await r.delete(_pending_call_key(user_id))
             logger.info("Delivered pending call to user %s on WS reconnect", user_id)
+        except Exception:
+            pass
+
+    # Deliver missed call notification if B was offline when A hung up.
+    pending_missed_raw = await r.get(_pending_missed_call_key(user_id))
+    if pending_missed_raw:
+        try:
+            await websocket.send_text(pending_missed_raw)
+            await r.delete(_pending_missed_call_key(user_id))
+            logger.info("Delivered pending missed call to user %s on WS reconnect", user_id)
         except Exception:
             pass
 
