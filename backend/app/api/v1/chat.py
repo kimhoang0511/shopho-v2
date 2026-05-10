@@ -161,6 +161,7 @@ async def initiate_call(
         "type": "call",
         "call_id": call_id,
         "order_id": str(order_id),
+        "caller_id": str(user.id),
         "caller_name": caller_name,
         "livekit_url": settings.livekit_url,
         "room_name": room,
@@ -267,12 +268,26 @@ async def cancel_call(
     cancel_data = {"type": "call_cancel", "call_id": call_id, "order_id": str(order_id)}
 
     r = await get_redis()
-    # Remove pending-call entries for both parties:
-    # - When A cancels: recipient_id=B → deletes B's key (correct)
-    # - When B declines: recipient_id=A → would miss B's key without user.id deletion
-    await r.delete(_pending_call_key(user.id), _pending_call_key(recipient_id))
-    await r.publish(_user_channel(recipient_id), json.dumps(cancel_data))
 
+    # Check if recipient's pending call exists and who the caller was.
+    # If the current user IS the caller (A hung up / timed out on A's side),
+    # send a missed-call notification to B.
+    pending_raw = await r.get(_pending_call_key(recipient_id))
+    caller_name_for_missed = user.display_name or user.username
+    is_caller_cancelling = False
+    if pending_raw:
+        try:
+            pending = json.loads(pending_raw)
+            is_caller_cancelling = pending.get("caller_id") == str(user.id)
+            caller_name_for_missed = pending.get("caller_name", caller_name_for_missed)
+        except Exception:
+            pass
+
+    # Remove pending-call entries for both parties.
+    await r.delete(_pending_call_key(user.id), _pending_call_key(recipient_id))
+
+    # Send call_cancel so B dismisses the ringing UI (if still showing).
+    await r.publish(_user_channel(recipient_id), json.dumps(cancel_data))
     if fcm_tokens:
         stale = await send_push(
             tokens=fcm_tokens,
@@ -282,6 +297,24 @@ async def cancel_call(
             data_only=True,
         )
         await prune_stale_tokens(db, stale)
+
+    # If A (caller) is the one cancelling and B hadn't answered yet → missed call.
+    if is_caller_cancelling:
+        missed_data = {
+            "type": "missed_call",
+            "call_id": call_id,
+            "order_id": str(order_id),
+            "caller_name": caller_name_for_missed,
+        }
+        await r.publish(_user_channel(recipient_id), json.dumps(missed_data))
+        if fcm_tokens:
+            stale = await send_push(
+                tokens=fcm_tokens,
+                title=f"Cuộc gọi nhỡ từ {caller_name_for_missed}",
+                body="Bạn vừa có một cuộc gọi nhỡ",
+                data=missed_data,
+            )
+            await prune_stale_tokens(db, stale)
 
     return {"ok": True}
 

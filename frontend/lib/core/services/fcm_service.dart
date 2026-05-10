@@ -35,6 +35,8 @@ Future<void> _backgroundHandler(RemoteMessage message) async {
       await FlutterCallkitIncoming.endCall(callId);
     }
   }
+  // missed_call: delivered via FCM notification payload (title/body set by backend)
+  // so the system shows it automatically — no extra handling needed here.
 }
 
 class FcmService {

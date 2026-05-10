@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -274,5 +275,29 @@ class CallService {
       return false;
     }
     return true;
+  }
+
+  static Future<void> showMissedCallNotification({required String callerName}) async {
+    const channelId = 'shopho_missed_calls';
+    final plugin = FlutterLocalNotificationsPlugin();
+    await plugin.show(
+      callerName.hashCode,
+      'Cuộc gọi nhỡ',
+      'Bạn vừa có một cuộc gọi nhỡ từ $callerName',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          channelId,
+          'Cuộc gọi nhỡ',
+          channelDescription: 'Thông báo cuộc gọi nhỡ',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentSound: true,
+        ),
+      ),
+    );
   }
 }
