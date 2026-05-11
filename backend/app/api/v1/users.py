@@ -46,11 +46,19 @@ async def update_me(
     return user
 
 
+class _DeleteMeBody(BaseModel):
+    password: str
+
+
 @router.delete("/me", status_code=204)
 async def delete_me(
+    body: _DeleteMeBody,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user),
 ):
+    from app.core.security import verify_password
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Mật khẩu không đúng")
     await db.delete(user)
     await db.commit()
 

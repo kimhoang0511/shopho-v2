@@ -39,10 +39,10 @@ const _productionHost = 'backend-shopho-production.up.railway.app';
 const _isDev = bool.fromEnvironment('FLUTTER_DEV', defaultValue: false);
 
 const apiBaseUrl = _isDev
-    ? 'http://192.168.100.195:8000/api/v1'
+    ? 'https://$_productionHost/api/v1'
     : 'https://$_productionHost/api/v1';
 const wsBaseUrl = _isDev
-    ? 'ws://192.168.100.195:8000/api/v1'
+    ? 'wss://$_productionHost/api/v1'
     : 'wss://$_productionHost/api/v1';
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());

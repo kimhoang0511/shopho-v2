@@ -170,62 +170,35 @@ class _ProfileBody extends ConsumerWidget {
     if (proceed != true || !context.mounted) return;
 
     // Step 2: confirm by typing username
-    final confirmCtrl = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Xác nhận xoá tài khoản'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              RichText(
-                text: TextSpan(
-                  style: DefaultTextStyle.of(ctx).style,
-                  children: [
-                    const TextSpan(text: 'Nhập '),
-                    TextSpan(
-                      text: username,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const TextSpan(text: ' để xác nhận xoá tài khoản.'),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: confirmCtrl,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: username,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
-            FilledButton(
-              onPressed: confirmCtrl.text == username ? () => Navigator.pop(ctx, true) : null,
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text('Xoá tài khoản'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _UsernameConfirmDialog(username: username),
     );
-    confirmCtrl.dispose();
     if (confirmed != true || !context.mounted) return;
+
+    // Step 3: re-authenticate with password
+    final password = await showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _PasswordConfirmDialog(),
+    );
+    if (password == null || password.isEmpty || !context.mounted) return;
 
     try {
       final dio = ref.read(apiClientProvider).dio;
       await FcmService.unregisterToken(dio);
-      await dio.delete('/users/me');
-    } catch (_) {}
+      await dio.delete('/users/me', data: {'password': password});
+    } on DioException catch (e) {
+      if (!context.mounted) return;
+      final msg = extractApiError(e, 'Mật khẩu không đúng. Vui lòng thử lại.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red),
+      );
+      return;
+    } catch (_) {
+      return;
+    }
 
     UserEventSocket.disconnect();
     const storage = FlutterSecureStorage();
@@ -422,6 +395,124 @@ class _ProfileBody extends ConsumerWidget {
           onPressed: () => _deleteAccount(context, ref),
           icon: const Icon(Icons.delete_forever_outlined, color: Colors.red, size: 18),
           label: const Text('Xoá tài khoản', style: TextStyle(color: Colors.red, fontSize: 13)),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Delete-account confirm dialogs ───────────────────────
+
+class _UsernameConfirmDialog extends StatefulWidget {
+  final String username;
+  const _UsernameConfirmDialog({required this.username});
+
+  @override
+  State<_UsernameConfirmDialog> createState() => _UsernameConfirmDialogState();
+}
+
+class _UsernameConfirmDialogState extends State<_UsernameConfirmDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Xác nhận xoá tài khoản'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          RichText(
+            text: TextSpan(
+              style: DefaultTextStyle.of(context).style,
+              children: [
+                const TextSpan(text: 'Nhập '),
+                TextSpan(text: widget.username, style: const TextStyle(fontWeight: FontWeight.bold)),
+                const TextSpan(text: ' để xác nhận xoá tài khoản.'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: widget.username,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              isDense: true,
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Huỷ')),
+        FilledButton(
+          onPressed: _ctrl.text == widget.username ? () => Navigator.pop(context, true) : null,
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          child: const Text('Xoá tài khoản'),
+        ),
+      ],
+    );
+  }
+}
+
+class _PasswordConfirmDialog extends StatefulWidget {
+  const _PasswordConfirmDialog();
+
+  @override
+  State<_PasswordConfirmDialog> createState() => _PasswordConfirmDialogState();
+}
+
+class _PasswordConfirmDialogState extends State<_PasswordConfirmDialog> {
+  final _ctrl = TextEditingController();
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Xác thực mật khẩu'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Nhập mật khẩu của bạn để xác nhận xoá tài khoản.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            obscureText: _obscure,
+            decoration: InputDecoration(
+              hintText: 'Mật khẩu',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              isDense: true,
+              suffixIcon: IconButton(
+                icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Huỷ')),
+        FilledButton(
+          onPressed: _ctrl.text.isNotEmpty ? () => Navigator.pop(context, _ctrl.text) : null,
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          child: const Text('Xác nhận'),
         ),
       ],
     );
