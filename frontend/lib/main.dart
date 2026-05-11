@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import 'core/api/api_client.dart';
 import 'core/auth_state.dart';
 import 'core/global_messenger.dart';
 import 'core/theme/app_theme.dart';

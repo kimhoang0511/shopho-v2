@@ -65,7 +65,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final me = await dio.get('/users/me');
       await storage.write(key: 'user_id', value: me.data['id'] as String);
       unawaited(FcmService.registerToken(dio));
-      unawaited(UserEventSocket.connect(token));
+      unawaited(UserEventSocket.connect(() async {
+        try {
+          final res = await Dio(BaseOptions(
+            baseUrl: apiBaseUrl,
+            connectTimeout: const Duration(seconds: 5),
+          )).post(
+            '/users/me/ephemeral-token',
+            options: Options(headers: {'Authorization': 'Bearer $token'}),
+          );
+          return res.data['token'] as String?;
+        } catch (_) {
+          return token;
+        }
+      }));
       authTokenNotifier.value = token; // triggers GoRouter redirect → /home
     } on DioException catch (e) {
       final msg = extractApiError(e, 'Đăng nhập thất bại');
