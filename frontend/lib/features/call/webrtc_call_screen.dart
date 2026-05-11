@@ -88,8 +88,11 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
     if (cancelId != widget.callId && widget.callId.isNotEmpty) return;
     if (_disposed || !mounted) return;
     _ringTimeout?.cancel();
-    // Only show missed call if the call never reached talking state.
-    if (_callState != _CallState.talking) {
+    // Only show missed call if:
+    // 1. Call never reached talking state, AND
+    // 2. We are the recipient (widget.token is empty) — not the caller.
+    //    The caller (A) does not receive a "missed call" when B declines.
+    if (_callState != _CallState.talking && widget.token.isEmpty) {
       CallService.showMissedCallNotification(
         callerName: widget.counterpartName,
         callId: widget.callId.isNotEmpty ? widget.callId : null,

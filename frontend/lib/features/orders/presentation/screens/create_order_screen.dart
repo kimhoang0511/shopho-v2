@@ -233,7 +233,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                   maxLines: 3,
                   decoration: const InputDecoration(
                     labelText: 'Ghi chú đơn',
-                    hintText: 'Ví dụ: Mua giúp 2 ký gạo hiệu A tại siêu thị X ở ngõ 4',
+                    hintText: '- Mua giúp 2 ký gạo hiệu A tại siêu thị X.\n- Sửa dùm bóng đèn...',
                     prefixIcon: Icon(Icons.notes),
                   ),
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Vui lòng nhập ghi chú' : null,

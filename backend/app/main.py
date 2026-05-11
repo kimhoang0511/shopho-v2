@@ -4,9 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.router import api_router
 from app.config import get_settings
+from app.core.limiter import limiter
 from app.core.redis import close_redis
 from app.database import engine
 from app.tasks.expiry import start_scheduler, stop_scheduler
@@ -37,6 +40,9 @@ app = FastAPI(
     docs_url="/docs" if settings.app_env == "development" else None,
     redoc_url=None,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ── Middleware ───────────────────────────────────────────────
 

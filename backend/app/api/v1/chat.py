@@ -14,7 +14,7 @@ import uuid
 from datetime import timedelta
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from jose import JWTError
 from livekit.api import AccessToken, VideoGrants
 from sqlalchemy import select
@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import current_user
 from app.config import get_settings
+from app.core.limiter import limiter, user_key
 from app.core.apns import send_voip_push_multi
 
 from app.core.fcm import send_push, prune_stale_tokens
@@ -115,7 +116,9 @@ async def get_messages(
 # ─── REST: initiate LiveKit call ─────────────────────────────
 
 @router.post("/orders/{order_id}/call")
+@limiter.limit("5/minute", key_func=user_key)
 async def initiate_call(
+    request: Request,
     order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user),

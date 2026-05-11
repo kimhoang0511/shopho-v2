@@ -1,6 +1,6 @@
 """
 Redis client + helpers for:
-  - Caching pending order lists (TTL 10s)
+  - Caching pending order lists (version-based invalidation)
   - Pub/Sub for real-time WebSocket broadcast
 """
 import json
@@ -17,7 +17,8 @@ _pool: aioredis.Redis | None = None
 
 PENDING_ORDERS_KEY = "shopho:orders:pending"   # sorted set (score = expires_at unix)
 ORDER_CHANNEL = "shopho:orders:events"          # pub/sub channel name
-ORDERS_CACHE_TTL = 10                           # seconds
+ORDERS_CACHE_TTL = 30                           # seconds per cached browse page
+ORDERS_VERSION_KEY = "shopho:orders:v"          # monotonic counter; bump = invalidate all browse caches
 
 
 async def get_redis() -> aioredis.Redis:
@@ -48,6 +49,19 @@ async def cache_get(key: str) -> Any | None:
 async def cache_delete(key: str) -> None:
     r = await get_redis()
     await r.delete(key)
+
+
+async def get_orders_version() -> int:
+    """Return the current browse-cache generation counter."""
+    r = await get_redis()
+    v = await r.get(ORDERS_VERSION_KEY)
+    return int(v) if v else 0
+
+
+async def bump_orders_version() -> None:
+    """Invalidate all browse caches by incrementing the generation counter."""
+    r = await get_redis()
+    await r.incr(ORDERS_VERSION_KEY)
 
 
 async def close_redis() -> None:

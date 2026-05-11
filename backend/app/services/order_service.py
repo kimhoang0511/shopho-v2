@@ -11,7 +11,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.redis import cache_delete, publish_event
+from app.core.redis import bump_orders_version, publish_event
 from app.models.order import Order, OrderImage, OrderStatus, ShipLocationType, VALIDITY_OPTIONS
 from app.models.user import DeviceToken, ShipperAlert, ShipperAlertLocation, User
 from app.core.fcm import send_push, prune_stale_tokens
@@ -105,7 +105,7 @@ async def _get_order_or_404(db: AsyncSession, order_id: uuid.UUID) -> Order:
 
 
 async def _invalidate_order_cache() -> None:
-    await cache_delete("shopho:orders:pending:list")
+    await bump_orders_version()
 
 
 # ─── CREATE ─────────────────────────────────────────────────

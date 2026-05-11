@@ -10,6 +10,10 @@ import 'call_service.dart';
 
 /// Persistent WebSocket that delivers call/cancel events instantly when the
 /// app is in the foreground. FCM remains the fallback for background/killed.
+///
+/// Accepts a [tokenProvider] callback that returns a short-lived ephemeral token
+/// (from POST /users/me/ephemeral-token) on each (re-)connect attempt. This
+/// prevents long-lived access tokens from appearing in server URL access logs.
 class UserEventSocket {
   static WebSocketChannel? _channel;
   static StreamSubscription? _sub;
@@ -17,10 +21,10 @@ class UserEventSocket {
   static Timer? _reconnectTimer;
   static bool _active = false;
   static bool _connecting = false;
-  static String? _token;
+  static Future<String?> Function()? _tokenProvider;
 
-  static Future<void> connect(String accessToken) async {
-    _token = accessToken;
+  static Future<void> connect(Future<String?> Function() tokenProvider) async {
+    _tokenProvider = tokenProvider;
     _active = true;
     // Already connected or connecting — nothing to do.
     if (_channel != null || _connecting) return;
@@ -39,10 +43,18 @@ class UserEventSocket {
   }
 
   static Future<void> _doConnect() async {
-    if (!_active || _token == null || _connecting) return;
+    if (!_active || _tokenProvider == null || _connecting) return;
     _connecting = true;
     try {
-      final uri = Uri.parse('$wsBaseUrl/ws/user/events?token=$_token');
+      // Fetch a fresh short-lived token on every (re-)connect so that the URL
+      // appearing in server access logs carries a token that expires in 5 min.
+      final token = await _tokenProvider!();
+      if (token == null || !_active) {
+        _connecting = false;
+        return;
+      }
+
+      final uri = Uri.parse('$wsBaseUrl/ws/user/events?token=$token');
       _channel = WebSocketChannel.connect(uri);
       await _channel!.ready;
       debugPrint('[UserEventSocket] connected');

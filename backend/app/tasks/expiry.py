@@ -1,6 +1,9 @@
 """
 Background scheduler – runs periodically to expire/auto-complete orders
 and broadcast WebSocket events.
+
+Multi-worker safety: each job acquires a Redis lock (NX + TTL) so only one
+worker executes the job per interval even when running with --workers > 1.
 """
 import logging
 import uuid
@@ -9,13 +12,20 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, text
 
 from app.core.fcm import send_push, prune_stale_tokens
-from app.core.redis import publish_event
+from app.core.redis import get_redis, publish_event
 from app.database import SessionLocal
 from app.models.user import DeviceToken
 
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler(timezone="UTC")
+
+
+async def _acquire_job_lock(job_name: str, ttl_seconds: int) -> bool:
+    """Returns True if this worker acquired the lock; False if another worker holds it."""
+    r = await get_redis()
+    locked = await r.set(f"shopho:jlock:{job_name}", "1", nx=True, ex=ttl_seconds)
+    return bool(locked)
 
 
 async def _push(db, user_id: uuid.UUID, title: str, body: str, order_id) -> None:
@@ -30,6 +40,8 @@ async def _push(db, user_id: uuid.UUID, title: str, body: str, order_id) -> None
 
 @scheduler.scheduled_job("interval", minutes=1, id="expire_orders", max_instances=1)
 async def expire_orders_job() -> None:
+    if not await _acquire_job_lock("expire_orders", 90):
+        return
     async with SessionLocal() as db:
         try:
             result = await db.execute(text("SELECT * FROM fn_expire_pending_orders()"))
@@ -62,6 +74,8 @@ async def expire_orders_job() -> None:
 
 @scheduler.scheduled_job("interval", minutes=5, id="autocomplete_accepted", max_instances=1)
 async def autocomplete_accepted_job() -> None:
+    if not await _acquire_job_lock("autocomplete_accepted", 360):
+        return
     async with SessionLocal() as db:
         try:
             result = await db.execute(text("SELECT * FROM fn_autocomplete_accepted_orders()"))
@@ -112,6 +126,8 @@ SELECT
 
 @scheduler.scheduled_job("interval", weeks=1, id="cleanup_stale_data", max_instances=1)
 async def cleanup_stale_data_job() -> None:
+    if not await _acquire_job_lock("cleanup_stale_data", 7 * 24 * 3600):
+        return
     async with SessionLocal() as db:
         try:
             result = await db.execute(_CLEANUP_SQL)
@@ -177,6 +193,8 @@ SELECT
 
 @scheduler.scheduled_job("interval", hours=48, id="archive_orders", max_instances=1)
 async def archive_orders_job() -> None:
+    if not await _acquire_job_lock("archive_orders", 48 * 3600):
+        return
     async with SessionLocal() as db:
         try:
             result = await db.execute(

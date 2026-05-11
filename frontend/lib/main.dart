@@ -43,6 +43,26 @@ void main() async {
   _initServices();
 }
 
+/// Fetches a short-lived (5-min) ephemeral token from the backend for use in
+/// WebSocket URLs. If the ephemeral token endpoint fails, falls back to the
+/// current full access token so the connection is not blocked.
+Future<String?> _wsTokenProvider() async {
+  final accessToken = authTokenNotifier.value;
+  if (accessToken == null) return null;
+  try {
+    final res = await Dio(BaseOptions(
+      baseUrl: apiBaseUrl,
+      connectTimeout: const Duration(seconds: 5),
+    )).post(
+      '/users/me/ephemeral-token',
+      options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
+    return res.data['token'] as String?;
+  } catch (_) {
+    return accessToken;
+  }
+}
+
 Future<void> _initServices() async {
   // 1. CallService first — EventChannel listener must be registered before
   //    FcmService (which can block up to 15 s on first run).
@@ -58,7 +78,7 @@ Future<void> _initServices() async {
   //    before WS connects and the incoming call is never delivered.
   final existingToken = authTokenNotifier.value;
   if (existingToken != null) {
-    UserEventSocket.connect(existingToken).ignore();
+    UserEventSocket.connect(_wsTokenProvider).ignore();
   }
 
   // 3. FCM init can take up to 15 s (iOS permission dialog) — run last.
@@ -183,9 +203,8 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       // Background/lock-screen accept: navigate once the app fully resumes.
       _navigatePendingCall();
       // Reconnect WebSocket in case Android killed it while screen was off.
-      final token = authTokenNotifier.value;
-      if (token != null) {
-        UserEventSocket.connect(token).ignore();
+      if (authTokenNotifier.value != null) {
+        UserEventSocket.connect(_wsTokenProvider).ignore();
       }
     }
   }

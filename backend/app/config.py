@@ -44,9 +44,9 @@ class Settings(BaseSettings):
     apns_bundle_id: str = ""
     apns_key_path: str = "backend/apns-key.p8"
 
-    # Admin
-    admin_username: str = "admin"
-    admin_password: str = "Admin@2026"
+    # Admin — no defaults; both MUST be set via env var (pydantic raises at startup if missing)
+    admin_username: str
+    admin_password: str
 
     # Contact
     zalo_contact: str = ""

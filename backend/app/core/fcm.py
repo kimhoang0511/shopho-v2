@@ -1,5 +1,7 @@
 """Firebase Cloud Messaging helper."""
+import asyncio
 import base64
+import functools
 import json
 import logging
 import os
@@ -109,7 +111,11 @@ async def send_push(
                 ),
             ) if use_apns_data_config else None,
         )
-        resp = messaging.send_each_for_multicast(message)
+        # Firebase Admin SDK is synchronous — run in thread pool to avoid blocking the event loop.
+        resp = await asyncio.get_event_loop().run_in_executor(
+            None,
+            functools.partial(messaging.send_each_for_multicast, message),
+        )
         logger.info("FCM sent %d/%d success (data_only=%s)", resp.success_count, len(tokens), data_only)
 
         stale: list[str] = []

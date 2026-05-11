@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -32,14 +33,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     super.dispose();
   }
 
+  /// Normalize +84xxxxxxxxx → 0xxxxxxxxx for consistent storage.
+  String _normalizePhone(String raw) {
+    final s = raw.trim();
+    if (s.startsWith('+84')) return '0${s.substring(3)}';
+    return s;
+  }
+
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
     try {
+      final phone = _normalizePhone(_phoneCtrl.text);
       final dio = ref.read(apiClientProvider).dio;
       await dio.post('/auth/register', data: {
-        'username': _phoneCtrl.text.trim(),
-        'phone': _phoneCtrl.text.trim(),
+        'username': phone,
+        'phone': phone,
         'display_name': _nameCtrl.text.trim(),
         'password': _passCtrl.text,
       });
@@ -95,14 +104,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   TextFormField(
                     controller: _phoneCtrl,
                     keyboardType: TextInputType.phone,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
+                    ],
                     decoration: const InputDecoration(
                       labelText: 'Số điện thoại',
                       prefixIcon: Icon(Icons.phone_outlined),
+                      hintText: 'VD: 0912345678',
                     ),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Nhập số điện thoại';
-                      final digits = v.trim().replaceAll(RegExp(r'\D'), '');
-                      if (digits.length < 9 || digits.length > 11) return 'Số điện thoại không hợp lệ';
+                      final normalized = _normalizePhone(v);
+                      if (!RegExp(r'^0[3-9]\d{8}$').hasMatch(normalized)) {
+                        return 'Số điện thoại Việt Nam không hợp lệ (VD: 0912345678)';
+                      }
                       return null;
                     },
                   ),

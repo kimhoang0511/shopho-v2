@@ -1,11 +1,14 @@
+import hashlib
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import current_user
+from app.api.v1.deps import current_user, verify_token
+from app.core.limiter import limiter, user_key
+from app.core.redis import cache_get, cache_set, get_orders_version, ORDERS_CACHE_TTL
 from app.database import get_db
 from app.models.order import ShipLocationType
 from app.models.user import User
@@ -23,7 +26,9 @@ def _raise(e: OrderError) -> None:
 # ─── CREATE ─────────────────────────────────────────────────
 
 @router.post("", response_model=OrderResponse, status_code=201)
+@limiter.limit("10/minute", key_func=user_key)
 async def create_order_endpoint(
+    request: Request,
     note: Annotated[str, Form()],
     gold_reward: Annotated[float, Form()],
     ship_location: Annotated[ShipLocationType, Form()],
@@ -71,7 +76,7 @@ async def list_orders_endpoint(
     limit: int = Query(50, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_user),
+    _: None = Depends(verify_token),
 ):
     # building_keys format: "apartment_uuid:building_name"
     building_pairs: list[tuple[uuid.UUID, str]] = []
@@ -82,6 +87,22 @@ async def list_orders_endpoint(
         except (ValueError, AttributeError):
             logging.getLogger(__name__).warning("Invalid building_key: %s", key)
 
+    # Build a stable cache key: version + hash of all filter params
+    version = await get_orders_version()
+    _params_str = str({
+        "v": version,
+        "apt": sorted(str(x) for x in apartment_ids),
+        "bld": sorted(f"{a}:{b}" for a, b in building_pairs),
+        "fl": sorted(floors),
+        "lim": limit,
+        "off": offset,
+    })
+    cache_key = "shopho:browse:" + hashlib.blake2b(_params_str.encode(), digest_size=8).hexdigest()
+
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     orders = await list_pending_orders(
         db,
         apartment_ids=apartment_ids or None,
@@ -90,7 +111,7 @@ async def list_orders_endpoint(
         limit=limit,
         offset=offset,
     )
-    return [
+    result = [
         OrderListItem(
             id=o.id,
             creator_id=o.creator_id,
@@ -108,6 +129,8 @@ async def list_orders_endpoint(
         )
         for o in orders
     ]
+    await cache_set(cache_key, [r.model_dump(mode="json") for r in result], ttl=ORDERS_CACHE_TTL)
+    return result
 
 
 # ─── UPDATE ─────────────────────────────────────────────────
@@ -154,7 +177,7 @@ async def market_prices_endpoint(
     ship_location: ShipLocationType = Query(...),
     ship_apartment_id: uuid.UUID = Query(...),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_user),
+    _: None = Depends(verify_token),
 ):
     from sqlalchemy import select
     from app.models.order import Order, OrderStatus
@@ -194,7 +217,7 @@ async def market_prices_endpoint(
 async def get_order_endpoint(
     order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_user),
+    _: None = Depends(verify_token),
 ):
     from app.services.order_service import _get_order_or_404
     try:

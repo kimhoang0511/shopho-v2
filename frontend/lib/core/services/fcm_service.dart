@@ -245,6 +245,12 @@ class FcmService {
         debugPrint('[FCM] token registered ok (${token.substring(0, 12)}… platform=$platform)');
       } on DioException catch (e) {
         final code = e.response?.statusCode;
+        // 401: JWT expired — user needs to re-login, which will re-register.
+        // Showing an error here is misleading since the user hasn't done anything wrong.
+        if (code == 401) {
+          debugPrint('[FCM] token registration skipped — JWT expired (will retry after login)');
+          return;
+        }
         final detail = e.response?.data?['detail'] ?? e.message;
         showGlobalError('[Push] Đăng ký token thất bại (HTTP $code): $detail');
         debugPrint('[FCM] backend register failed: $e');

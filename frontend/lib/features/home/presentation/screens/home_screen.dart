@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -51,11 +50,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   }
 
   Future<void> _openTopup() async {
-    const storage = FlutterSecureStorage();
-    final token = await storage.read(key: 'access_token');
-    if (token == null) return;
-    final uri = Uri.parse('$_kTopupWebUrl?token=${Uri.encodeComponent(token)}');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      // Use a short-lived ephemeral token (5 min) instead of the full access_token
+      // to limit the exposure window if this URL appears in browser history or server logs.
+      final res = await ref.read(apiClientProvider).dio.post('/users/me/ephemeral-token');
+      final token = res.data['token'] as String?;
+      if (token == null || !mounted) return;
+      final uri = Uri.parse('$_kTopupWebUrl?token=${Uri.encodeComponent(token)}');
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // If the ephemeral token request fails, open without token
+      // so the web app can redirect to its own auth flow.
+      final uri = Uri.parse(_kTopupWebUrl);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -156,14 +164,16 @@ class _SlotBalanceCard extends StatelessWidget {
     final bgColor = isEmpty ? Colors.red.shade50 : const Color(0xFFF4F5FF);
     final borderColor = isEmpty ? Colors.red.shade200 : const Color(0xFFDDE0FF);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor),
-      ),
-      child: Row(
+    return GestureDetector(
+      onTap: onTopup,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
@@ -219,6 +229,7 @@ class _SlotBalanceCard extends StatelessWidget {
               ),
             ),
         ],
+        ),
       ),
     );
   }
@@ -261,8 +272,8 @@ class _AppIntro extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Những người đang sống chung trong khu căn hộ/toà nhà, có thể giúp đỡ mua/ship hộ lẫn nhau. '
-            'Tiền công mua/ship hộ 2 bên có thể tự chọn, thương lượng nhau.',
+            'Những người đang sống chung trong khu căn hộ/toà nhà, có thể giúp đỡ mua/ship hộ lẫn nhau, hoặc nhờ vả sữa chữa, làm việc nhà... '
+            '\nTiền công 2 bên có thể tự chọn, thương lượng nhau.',
             style: tt.bodySmall?.copyWith(color: Colors.grey.shade700, height: 1.5),
           ),
           const SizedBox(height: 14),
@@ -280,6 +291,7 @@ class _AppIntro extends StatelessWidget {
         ],
       ),
     );
+
   }
 }
 

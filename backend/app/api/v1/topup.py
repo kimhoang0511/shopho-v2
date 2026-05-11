@@ -147,15 +147,16 @@ async def payment_webhook(
       - data[].description : nội dung chuyển khoản (chứa order_code)
       - data[].is_incoming : True nếu là tiền vào
     """
-    # Verify Casso secret — Secure-Token header (primary) hoặc Authorization: Bearer (fallback)
-    if settings.payment_webhook_secret:
-        secret = settings.payment_webhook_secret
-        received = (
-            request.headers.get("Secure-Token")
-            or request.headers.get("Authorization", "").replace("Bearer ", "")
-        )
-        if received != secret:
-            raise HTTPException(401, "Invalid webhook secret")
+    # Verify Casso secret — fail CLOSED: reject all requests if secret is not configured.
+    if not settings.payment_webhook_secret:
+        raise HTTPException(503, "Webhook not configured")
+    import hmac as _hmac
+    received = (
+        request.headers.get("Secure-Token")
+        or request.headers.get("Authorization", "").replace("Bearer ", "")
+    )
+    if not _hmac.compare_digest(received, settings.payment_webhook_secret):
+        raise HTTPException(401, "Invalid webhook secret")
 
     import re
 

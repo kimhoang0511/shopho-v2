@@ -221,6 +221,11 @@ final _currentUserIdProvider = FutureProvider.autoDispose<String?>((ref) async {
   return storage.read(key: 'user_id');
 });
 
+final _acceptedOrderCountProvider = FutureProvider.autoDispose<int>((ref) async {
+  final orders = await ref.read(ordersRepositoryProvider).myShippedOrders();
+  return orders.where((o) => o.status == OrderStatus.accepted).length;
+});
+
 // ─── Main screen ─────────────────────────────────────────────
 
 class BrowseOrdersScreen extends ConsumerStatefulWidget {
@@ -408,6 +413,7 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
     final allApts = ref.watch(_aptListProvider).valueOrNull;
     final myApt = ref.watch(_myProfileAptProvider).valueOrNull;
     final apts = allApts ?? (myApt != null ? [myApt] : <_AptInfo>[]);
+    final acceptedCount = ref.watch(_acceptedOrderCountProvider).valueOrNull ?? 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFECF0FF),
@@ -451,16 +457,23 @@ class _BrowseOrdersScreenState extends ConsumerState<BrowseOrdersScreen> {
                   ),
           ),
           const SizedBox(width: 12),
-          FloatingActionButton.extended(
-            heroTag: 'shipped_orders',
-            onPressed: () async {
-              await context.push('/orders/my-shipped');
-              ref.invalidate(pendingOrdersProvider);
-            },
-            icon: const Icon(Icons.local_shipping_outlined),
-            label: const Text('Đơn đã tiếp nhận'),
-            backgroundColor: const Color(0xFF5B6AF0),
-            foregroundColor: Colors.white,
+          Badge.count(
+            count: acceptedCount,
+            isLabelVisible: acceptedCount > 0,
+            backgroundColor: Colors.red,
+            textColor: Colors.white,
+            child: FloatingActionButton.extended(
+              heroTag: 'shipped_orders',
+              onPressed: () async {
+                await context.push('/orders/my-shipped');
+                ref.invalidate(pendingOrdersProvider);
+                ref.invalidate(_acceptedOrderCountProvider);
+              },
+              icon: const Icon(Icons.local_shipping_outlined),
+              label: const Text('Đơn đã tiếp nhận'),
+              backgroundColor: const Color(0xFF5B6AF0),
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),

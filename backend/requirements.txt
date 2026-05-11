@@ -32,6 +32,9 @@ livekit-api==0.7.1
 # APNs VoIP push (iOS call notifications)
 httpx[http2]==0.28.0
 
+# Rate limiting (Redis-backed, works across multiple workers)
+slowapi==0.1.9
+
 # Utils
 python-dotenv==1.0.1
 httpx==0.28.0

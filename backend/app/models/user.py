@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -87,6 +87,11 @@ class ShipperAlertLocation(Base):
     )
     building: Mapped[str | None] = mapped_column(String(20))   # NULL = any building
     floor: Mapped[int | None] = mapped_column(SmallInteger)    # NULL = any floor
+
+    __table_args__ = (
+        # Used by _push_new_order_alerts to find matching shippers in O(shippers-per-apt)
+        Index("idx_sal_apt_building", "apartment_id", "building"),
+    )
 
 
 class RefreshToken(Base):
