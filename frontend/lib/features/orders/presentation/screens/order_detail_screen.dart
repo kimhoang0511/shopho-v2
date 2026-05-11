@@ -185,6 +185,7 @@ class OrderDetailScreen extends ConsumerWidget {
                     final livekitUrl = res.data['livekit_url'] as String? ?? '';
                     final token = res.data['token'] as String? ?? '';
                     final callId = res.data['call_id'] as String? ?? '';
+                    final orderNote = res.data['order_note'] as String? ?? '';
                     if (context.mounted) {
                       context.push(
                         '/call/$orderId',
@@ -193,6 +194,7 @@ class OrderDetailScreen extends ConsumerWidget {
                           'livekit_url': livekitUrl,
                           'token': token,
                           'call_id': callId,
+                          'order_note': orderNote,
                         },
                       );
                     }

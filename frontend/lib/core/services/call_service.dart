@@ -130,11 +130,12 @@ class CallService {
   static const _storage = FlutterSecureStorage();
 
   static Future<void> _saveCallData(
-      String callId, String orderId, String callerName, String livekitUrl) async {
+      String callId, String orderId, String callerName, String livekitUrl,
+      {String orderNote = ''}) async {
     try {
       await _storage.write(
         key: '_call_$callId',
-        value: jsonEncode({'o': orderId, 'n': callerName, 'u': livekitUrl}),
+        value: jsonEncode({'o': orderId, 'n': callerName, 'u': livekitUrl, 't': orderNote}),
       );
     } catch (_) {}
   }
@@ -148,6 +149,7 @@ class CallService {
         'order_id': m['o'] as String? ?? '',
         'caller_name': m['n'] as String? ?? '',
         'livekit_url': m['u'] as String? ?? '',
+        'order_note': m['t'] as String? ?? '',
       };
     } catch (_) {
       return null;
@@ -207,6 +209,7 @@ class CallService {
     String? orderId;
     String callerName = 'Người gọi';
     String livekitUrl = '';
+    String orderNote = '';
 
     // 1. In-memory cache (WS / FCM-foreground path in same isolate).
     final cached = _inMemoryCallCache[callId];
@@ -214,6 +217,7 @@ class CallService {
       orderId = cached['order_id'];
       if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
       if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
+      if ((cached['order_note'] ?? '').isNotEmpty) orderNote = cached['order_note']!;
     }
 
     // 2. Persistent storage (killed-app or FCM background isolate).
@@ -223,6 +227,7 @@ class CallService {
         orderId = saved['order_id'];
         if ((saved['caller_name'] ?? '').isNotEmpty) callerName = saved['caller_name']!;
         if ((saved['livekit_url'] ?? '').isNotEmpty) livekitUrl = saved['livekit_url']!;
+        if ((saved['order_note'] ?? '').isNotEmpty) orderNote = saved['order_note']!;
       }
     }
 
@@ -248,6 +253,7 @@ class CallService {
       'callerName': callerName,
       'livekitUrl': livekitUrl,
       'callId': callId,
+      'orderNote': orderNote,
     };
     _pendingAcceptedCall = callInfo;
     acceptedCallNotifier.value = callInfo;
@@ -273,6 +279,7 @@ class CallService {
         String? orderId = extra?['order_id'] as String?;
         String callerName = extra?['caller_name'] as String? ?? 'Người gọi';
         String livekitUrl = extra?['livekit_url'] as String? ?? '';
+        String orderNote = extra?['order_note'] as String? ?? '';
 
         if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
           final cached = _inMemoryCallCache[callId];
@@ -280,6 +287,7 @@ class CallService {
             orderId = cached['order_id'];
             if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
             if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
+            if ((cached['order_note'] ?? '').isNotEmpty) orderNote = cached['order_note']!;
           }
         }
 
@@ -289,6 +297,7 @@ class CallService {
             orderId = saved['order_id'];
             if ((saved['caller_name'] ?? '').isNotEmpty) callerName = saved['caller_name']!;
             if ((saved['livekit_url'] ?? '').isNotEmpty) livekitUrl = saved['livekit_url']!;
+            if ((saved['order_note'] ?? '').isNotEmpty) orderNote = saved['order_note']!;
           }
         }
 
@@ -304,6 +313,7 @@ class CallService {
             'callerName': callerName,
             'livekitUrl': livekitUrl,
             'callId': callId,
+            'orderNote': orderNote,
           };
           _pendingAcceptedCall = callInfo;
           acceptedCallNotifier.value = callInfo;
@@ -327,6 +337,7 @@ class CallService {
         String? orderId = extra?['order_id'] as String?;
         String callerName = extra?['caller_name'] as String? ?? 'Người gọi';
         String livekitUrl = extra?['livekit_url'] as String? ?? '';
+        String orderNote = extra?['order_note'] as String? ?? '';
 
         // Fallback 1: in-memory cache (main-isolate WS / FCM-foreground path).
         if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
@@ -335,6 +346,7 @@ class CallService {
             orderId = cached['order_id'];
             if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
             if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
+            if ((cached['order_note'] ?? '').isNotEmpty) orderNote = cached['order_note']!;
             debugPrint('[CallService] extra from memory cache — orderId=$orderId');
           }
         }
@@ -346,6 +358,7 @@ class CallService {
             orderId = saved['order_id'];
             if ((saved['caller_name'] ?? '').isNotEmpty) callerName = saved['caller_name']!;
             if ((saved['livekit_url'] ?? '').isNotEmpty) livekitUrl = saved['livekit_url']!;
+            if ((saved['order_note'] ?? '').isNotEmpty) orderNote = saved['order_note']!;
             debugPrint('[CallService] extra from storage — orderId=$orderId');
           }
         }
@@ -362,6 +375,7 @@ class CallService {
             'callerName': callerName,
             'livekitUrl': livekitUrl,
             'callId': callId,
+            'orderNote': orderNote,
           };
           // Lifecycle-based fallback (background / lock-screen accept).
           _pendingAcceptedCall = callInfo;
@@ -430,6 +444,7 @@ class CallService {
     required String livekitUrl,
     required String roomName,
     int? initiatedAt,
+    String orderNote = '',
   }) async {
     if (initiatedAt != null) {
       final ageSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000 - initiatedAt;
@@ -468,17 +483,23 @@ class CallService {
       'order_id': orderId,
       'caller_name': callerName,
       'livekit_url': livekitUrl,
+      'order_note': orderNote,
     };
 
     // Also persist to storage for the killed-app / FCM background isolate case.
-    _saveCallData(callId, orderId, callerName, livekitUrl).ignore();
+    _saveCallData(callId, orderId, callerName, livekitUrl, orderNote: orderNote).ignore();
 
     await _cleanUpStaleCalls(skipCallId: callId);
+
+    final truncatedNote = orderNote.length > 60
+        ? '${orderNote.substring(0, 57)}...'
+        : orderNote;
 
     final params = CallKitParams(
       id: callId,
       nameCaller: callerName,
       appName: 'ShopHo',
+      handle: truncatedNote.isNotEmpty ? truncatedNote : null,
       type: 0,
       duration: 45000,
       extra: {
@@ -486,6 +507,7 @@ class CallService {
         'caller_name': callerName,
         'livekit_url': livekitUrl,
         'room_name': roomName,
+        'order_note': orderNote,
       },
       // Ongoing call notification (shown after Accept, while in call).
       // Provides a "Kết thúc" hang-up button — critical fallback when the
@@ -496,13 +518,14 @@ class CallService {
         callbackText: 'Kết thúc',
         isShowCallback: true,
       ),
-      android: const AndroidParams(
+      android: AndroidParams(
         // true → on Android 14+: uses CallStyle.forOngoingCall() for the
         // ongoing notification, making the "Kết thúc" hang-up button always
         // visible without needing to expand. Incoming still uses
         // CallStyle.forIncomingCall() on Android 14 regardless of this flag.
         isCustomNotification: true,
         isShowFullLockedScreen: true,
+        isShowCallID: truncatedNote.isNotEmpty,
         ringtonePath: 'default',
         actionColor: '#5B6AF0',
         incomingCallNotificationChannelName: 'Cuộc gọi đến',

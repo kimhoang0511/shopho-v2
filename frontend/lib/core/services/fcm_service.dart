@@ -28,6 +28,7 @@ Future<void> _backgroundHandler(RemoteMessage message) async {
       livekitUrl: message.data['livekit_url'] ?? '',
       roomName: message.data['room_name'] ?? '',
       initiatedAt: initiatedAt,
+      orderNote: message.data['order_note'] ?? '',
     );
   } else if (message.data['type'] == 'call_cancel') {
     final callId = message.data['call_id'] as String? ?? '';
@@ -125,6 +126,7 @@ class FcmService {
           livekitUrl: message.data['livekit_url'] ?? '',
           roomName: message.data['room_name'] ?? '',
           initiatedAt: initiatedAt,
+          orderNote: message.data['order_note'] ?? '',
         );
         return;
       }

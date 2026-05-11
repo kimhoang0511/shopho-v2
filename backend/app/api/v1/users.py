@@ -46,6 +46,15 @@ async def update_me(
     return user
 
 
+@router.delete("/me", status_code=204)
+async def delete_me(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    await db.delete(user)
+    await db.commit()
+
+
 @router.get("/apartments", response_model=list[ApartmentOut])
 async def list_apartments_for_user(
     db: AsyncSession = Depends(get_db),

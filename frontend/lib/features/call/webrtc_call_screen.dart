@@ -18,6 +18,7 @@ class WebRtcCallScreen extends ConsumerStatefulWidget {
   final String livekitUrl;
   /// Pre-provided token (caller). Empty string → screen fetches its own token (recipient).
   final String token;
+  final String orderNote;
 
   const WebRtcCallScreen({
     super.key,
@@ -26,6 +27,7 @@ class WebRtcCallScreen extends ConsumerStatefulWidget {
     required this.counterpartName,
     required this.livekitUrl,
     required this.token,
+    this.orderNote = '',
   });
 
   @override
@@ -77,7 +79,10 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
       // Call was established — remote hung up normally, not a missed call.
       setState(() => _callState = _CallState.ended);
       Future.delayed(const Duration(seconds: 2), () => _hangup(sendCancel: false));
-    } else {
+    } else if (_callState != _CallState.ended) {
+      // Not yet connected — hang up immediately.
+      // Guard _CallState.ended: both ParticipantDisconnectedEvent and
+      // RoomDisconnectedEvent can fire together; only the first should act.
       _hangup(sendCancel: false);
     }
   }
@@ -87,6 +92,9 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
     if (cancelId == null) return;
     if (cancelId != widget.callId && widget.callId.isNotEmpty) return;
     if (_disposed || !mounted) return;
+    // If the call already ended normally (remote disconnected from LiveKit),
+    // ignore the subsequent cancel signal — don't overwrite 'ended' with 'noAnswer'.
+    if (_callState == _CallState.ended) return;
     _ringTimeout?.cancel();
     // Only show missed call if:
     // 1. Call never reached talking state, AND
@@ -139,6 +147,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
     // Phase 2: connect to LiveKit room AND initialize audio track in parallel.
     // LocalAudioTrack.create() only opens the mic — it doesn't need the room.
     // Overlapping it with room.connect() saves ~200-400ms.
+    final callInitiatedAt = DateTime.now();
     try {
       final connectFuture = _room.connect(
         livekitUrl,
@@ -178,11 +187,15 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
         ..on<ParticipantDisconnectedEvent>((_) => _onRemoteDisconnect())
         ..on<RoomDisconnectedEvent>((_) => _onRemoteDisconnect());
 
-      // Guard against stale room participants: only treat an already-present
-      // participant as "active" when they are actually publishing audio.
-      // A stale participant from a previous call has no audio tracks.
+      // Guard against stale room participants (previous call that didn't clean up).
+      // Only apply joinedAt filter for the CALLER (A): a lingering B from a prior
+      // session has joinedAt before this call started.
+      // For the RECIPIENT (B): the caller (A) always joined before B connects,
+      // so the joinedAt filter would incorrectly reject the legitimate caller.
+      final isCaller = widget.token.isNotEmpty;
       final activeRemote = _room.remoteParticipants.values.any(
-        (p) => p.audioTrackPublications.isNotEmpty,
+        (p) => p.audioTrackPublications.isNotEmpty &&
+               (!isCaller || p.joinedAt.isAfter(callInitiatedAt)),
       );
       if (activeRemote && mounted) {
         _ringTimeout?.cancel();
@@ -303,6 +316,32 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
                     state: _callState,
                     elapsed: _elapsed,
                   ),
+                  if (widget.orderNote.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.sticky_note_2_outlined, color: Colors.white54, size: 15),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              widget.orderNote,
+                              style: const TextStyle(color: Colors.white70, fontSize: 13),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
 

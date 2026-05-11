@@ -146,6 +146,93 @@ class _ProfileBody extends ConsumerWidget {
   final Map<String, dynamic> me;
   const _ProfileBody({required this.me});
 
+  Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
+    final username = me['username'] as String? ?? '';
+
+    // Step 1: warning dialog
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Xoá tài khoản'),
+        content: const Text(
+          'Hành động này không thể hoàn tác. Tất cả dữ liệu của bạn sẽ bị xoá vĩnh viễn bao gồm thông tin cá nhân, lịch sử đơn hàng và các dữ liệu liên quan.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Huỷ')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Tiếp tục'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !context.mounted) return;
+
+    // Step 2: confirm by typing username
+    final confirmCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Xác nhận xoá tài khoản'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RichText(
+                text: TextSpan(
+                  style: DefaultTextStyle.of(ctx).style,
+                  children: [
+                    const TextSpan(text: 'Nhập '),
+                    TextSpan(
+                      text: username,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const TextSpan(text: ' để xác nhận xoá tài khoản.'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: username,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  isDense: true,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+            FilledButton(
+              onPressed: confirmCtrl.text == username ? () => Navigator.pop(ctx, true) : null,
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Xoá tài khoản'),
+            ),
+          ],
+        ),
+      ),
+    );
+    confirmCtrl.dispose();
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final dio = ref.read(apiClientProvider).dio;
+      await FcmService.unregisterToken(dio);
+      await dio.delete('/users/me');
+    } catch (_) {}
+
+    UserEventSocket.disconnect();
+    const storage = FlutterSecureStorage();
+    await storage.deleteAll();
+    authTokenNotifier.value = null;
+  }
+
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -327,6 +414,14 @@ class _ProfileBody extends ConsumerWidget {
             side: const BorderSide(color: Colors.red),
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
+        ),
+        const SizedBox(height: 12),
+
+        // Delete account
+        TextButton.icon(
+          onPressed: () => _deleteAccount(context, ref),
+          icon: const Icon(Icons.delete_forever_outlined, color: Colors.red, size: 18),
+          label: const Text('Xoá tài khoản', style: TextStyle(color: Colors.red, fontSize: 13)),
         ),
       ],
     );

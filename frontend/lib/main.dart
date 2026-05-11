@@ -165,6 +165,7 @@ final _router = GoRouter(
           livekitUrl: extra['livekit_url'] as String? ?? '',
           token: extra['token'] as String? ?? '',
           counterpartName: extra['name'] as String? ?? 'Đối phương',
+          orderNote: extra['order_note'] as String? ?? '',
         );
       },
     ),
@@ -222,6 +223,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
           'livekit_url': call['livekitUrl'] ?? '',
           'token': '',
           'call_id': call['callId'] ?? '',
+          'order_note': call['orderNote'] ?? '',
         },
       );
     });
