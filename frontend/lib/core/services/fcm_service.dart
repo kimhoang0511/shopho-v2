@@ -216,22 +216,16 @@ class FcmService {
               settings.authorizationStatus == AuthorizationStatus.provisional) {
             token = await FirebaseMessaging.instance.getToken();
           } else {
-            final status = settings.authorizationStatus.name;
-            showGlobalError(
-              '[Push] Quyền thông báo bị từ chối ($status) — thiết bị sẽ không nhận được cuộc gọi hay thông báo.',
-            );
-            debugPrint('[FCM] permission denied: $status');
+            debugPrint('[FCM] permission denied: ${settings.authorizationStatus.name}');
             return;
           }
         } on TimeoutException {
-          showGlobalError('[Push] Hết thời gian chờ cấp quyền thông báo.');
           debugPrint('[FCM] requestPermission timed out');
           return;
         }
       }
 
       if (token == null) {
-        showGlobalError('[Push] Không lấy được FCM token — thiết bị sẽ không nhận được thông báo đẩy.');
         debugPrint('[FCM] getToken returned null after permission granted');
         return;
       }
@@ -244,26 +238,9 @@ class FcmService {
         );
         debugPrint('[FCM] token registered ok (${token.substring(0, 12)}… platform=$platform)');
       } on DioException catch (e) {
-        final code = e.response?.statusCode;
-        // 401: JWT expired — user needs to re-login, which will re-register.
-        // Showing an error here is misleading since the user hasn't done anything wrong.
-        if (code == 401) {
-          debugPrint('[FCM] token registration skipped — JWT expired (will retry after login)');
-          return;
-        }
-        final detail = e.response?.data?['detail'] ?? e.message;
-        showGlobalError('[Push] Đăng ký token thất bại (HTTP $code): $detail');
         debugPrint('[FCM] backend register failed: $e');
       }
     } catch (e) {
-      // On iOS the APNs token arrives asynchronously; calling getToken() too early
-      // throws apns-token-not-set. onTokenRefresh (registered above) will fire once
-      // the token is ready, so this is safe to ignore silently.
-      if (e.toString().contains('apns-token-not-set')) {
-        debugPrint('[FCM] APNs token not ready yet — will register via onTokenRefresh');
-        return;
-      }
-      showGlobalError('[Push] Lỗi không xác định khi đăng ký thông báo đẩy: $e');
       debugPrint('[FCM] registerToken unexpected error: $e');
     }
   }
