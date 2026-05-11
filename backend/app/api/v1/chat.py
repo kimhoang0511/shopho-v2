@@ -174,6 +174,7 @@ async def initiate_call(
         "livekit_url": settings.livekit_url,
         "room_name": room,
         "initiated_at": int(time.time()),
+        "order_note": order.note or "",
     }
 
     r = await get_redis()
@@ -216,6 +217,7 @@ async def initiate_call(
         "livekit_url": settings.livekit_url,
         "room_name": room,
         "token": caller_token,
+        "order_note": order.note or "",
     }
 
 
