@@ -59,6 +59,19 @@ async def delete_me(
     from app.core.security import verify_password
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=400, detail="Mật khẩu không đúng")
+
+    if user.phone:
+        await db.execute(
+            text("""
+                INSERT INTO deleted_account_slots (phone, order_slots)
+                VALUES (:phone, :slots)
+                ON CONFLICT (phone) DO UPDATE
+                    SET order_slots = EXCLUDED.order_slots,
+                        deleted_at  = NOW()
+            """),
+            {"phone": user.phone, "slots": user.order_slots},
+        )
+
     await db.delete(user)
     await db.commit()
 

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
@@ -30,6 +30,15 @@ async def register(db: AsyncSession, data: RegisterRequest) -> User:
     if existing:
         raise AuthError("Username đã tồn tại", 409)
 
+    # Restore order_slots from previous deleted account with same phone
+    saved_slots: int | None = None
+    if data.phone:
+        row = await db.execute(
+            text("SELECT order_slots FROM deleted_account_slots WHERE phone = :phone"),
+            {"phone": data.phone},
+        )
+        saved_slots = row.scalar_one_or_none()
+
     user = User(
         username=data.username,
         password_hash=hash_password(data.password),
@@ -39,9 +48,17 @@ async def register(db: AsyncSession, data: RegisterRequest) -> User:
         apt_building=data.apt_building,
         apt_floor=data.apt_floor,
         apt_room=data.apt_room,
+        order_slots=saved_slots if saved_slots is not None else 5,
     )
     db.add(user)
     await db.flush()
+
+    if saved_slots is not None:
+        await db.execute(
+            text("DELETE FROM deleted_account_slots WHERE phone = :phone"),
+            {"phone": data.phone},
+        )
+
     await db.refresh(user)  # fetch server-generated fields (created_at, updated_at)
     return user
 
