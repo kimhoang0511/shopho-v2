@@ -76,7 +76,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return Scaffold(
       backgroundColor: cs.surface,
       appBar: AppBar(
-        title: const Text('ShopHo', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Kinme', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.person_outline),
@@ -255,17 +255,13 @@ class _AppIntro extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF5B6AF0),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 18),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset('logo.png', width: 30, height: 30, fit: BoxFit.cover),
               ),
               const SizedBox(width: 10),
               Text(
-                'ShopHo là gì?',
+                'Kinme là gì?',
                 style: tt.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF3B3F8C)),
               ),
             ],
