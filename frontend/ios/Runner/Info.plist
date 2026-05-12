@@ -54,6 +54,8 @@
 		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Ứng dụng cần truy cập mạng nội bộ để kết nối cuộc gọi WebRTC</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Ứng dụng cần microphone để thực hiện cuộc gọi</string>
 	<key>NSCameraUsageDescription</key>
