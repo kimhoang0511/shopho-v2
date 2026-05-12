@@ -42,6 +42,14 @@ post_install do |installer|
       # Fixes "ExtractAppIntentsMetadata failed" on Xcode 16+
       config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
       config.build_settings['SWIFT_EMIT_MODULE_INTERFACE'] = 'NO'
+      # permission_handler requires compile-time flags for each permission used.
+      # Without these, permission code is excluded from the iOS build and
+      # Permission.microphone.request() becomes a silent no-op.
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+        'PERMISSION_MICROPHONE=1',
+        'PERMISSION_CAMERA=1',
+      ]
     end
   end
 end
