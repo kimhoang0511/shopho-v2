@@ -50,11 +50,21 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.3
   build_runner: ^2.4.9
   freezed: ^2.5.2
   json_serializable: ^6.8.0
   riverpod_generator: ^2.4.0
   flutter_lints: ^3.0.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "logo.png"
+  remove_alpha_ios: true
+  min_sdk_android: 21
+  web:
+    generate: false
 
 flutter:
   uses-material-design: true

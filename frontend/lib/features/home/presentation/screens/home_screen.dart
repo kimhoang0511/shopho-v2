@@ -223,7 +223,7 @@ class _SlotBalanceCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  isEmpty ? 'Nạp lượt' : 'Nạp thêm',
+                  isEmpty ? 'Xem chi tiết' : 'Xem chi tiết',
                   style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
