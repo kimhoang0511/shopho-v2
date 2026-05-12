@@ -168,9 +168,11 @@ class OrderDetailScreen extends ConsumerWidget {
                 subtitle: 'Kết nối trực tiếp P2P, miễn phí',
                 onTap: () async {
                   Navigator.pop(sheetCtx);
-                  // Wait for bottom sheet close animation before showing any dialog
+                  // Wait for bottom sheet close animation before showing any dialog.
+                  // Do NOT guard on context.mounted here — OrderDetailScreen is a
+                  // ConsumerWidget whose context can be invalidated by a rebuild while
+                  // the delay is running, even though the screen is still visible.
                   await Future.delayed(const Duration(milliseconds: 300));
-                  if (!context.mounted) return;
 
                   final micStatus = await Permission.microphone.status;
 
