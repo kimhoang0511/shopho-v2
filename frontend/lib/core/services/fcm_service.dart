@@ -83,7 +83,11 @@ class FcmService {
     await _localNotif.initialize(
       const InitializationSettings(
         android: AndroidInitializationSettings('@drawable/ic_notification'),
-        iOS: DarwinInitializationSettings(),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        ),
       ),
       onDidReceiveNotificationResponse: (details) {
         final orderId = details.payload;
@@ -135,13 +139,18 @@ class FcmService {
         CallService.showMissedCallNotification(callerName: callerName, orderId: orderId, callId: callId);
         return;
       }
+      // On iOS, message.notification can be null even for notification messages
+      // (Firebase delivers data separately from the notification payload).
+      // Fall back to data fields so foreground notifications always appear.
       final notification = message.notification;
-      if (notification == null) return;
+      final title = notification?.title ?? message.data['title'] as String?;
+      final body  = notification?.body  ?? message.data['body']  as String?;
+      if (title == null && body == null) return;
       final orderId = message.data['order_id'] as String?;
       _localNotif.show(
-        notification.hashCode,
-        notification.title,
-        notification.body,
+        message.hashCode,
+        title,
+        body,
         NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
@@ -149,9 +158,13 @@ class FcmService {
             importance: Importance.high,
             priority: Priority.high,
           ),
-          iOS: const DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
         ),
-        payload: orderId, // tapped → navigates to this order
+        payload: orderId,
       );
     });
 
