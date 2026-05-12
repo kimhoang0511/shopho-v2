@@ -1,4 +1,4 @@
-package com.example.shopho
+package com.kinme.app
 
 import android.content.Intent
 import android.os.Bundle

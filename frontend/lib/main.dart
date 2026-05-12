@@ -232,7 +232,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'kinme',
+      title: 'Kinme',
       theme: AppTheme.light(),
       routerConfig: _router,
       scaffoldMessengerKey: globalMessengerKey,

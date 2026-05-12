@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:376434193584:android:3291d6c5b039f6a89ef775",
+        "mobilesdk_app_id": "1:376434193584:android:c6cf9512f3ab609e9ef775",
         "android_client_info": {
-          "package_name": "com.example.shopho"
+          "package_name": "com.kinme.app"
         }
       },
       "oauth_client": [],

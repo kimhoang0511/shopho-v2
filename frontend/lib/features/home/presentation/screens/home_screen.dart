@@ -257,7 +257,7 @@ class _AppIntro extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.asset('logo.png', width: 30, height: 30, fit: BoxFit.cover),
+                child: Image.asset('logo.png', width: 48, height: 48, fit: BoxFit.cover),
               ),
               const SizedBox(width: 10),
               Text(
