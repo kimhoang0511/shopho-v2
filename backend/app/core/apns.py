@@ -31,6 +31,14 @@ def _load_key(path: str) -> str | None:
     global _cached_key, _cached_key_path
     if _cached_key and _cached_key_path == path:
         return _cached_key
+    # Priority 1: env var (base64-encoded .p8 content for cloud deployments)
+    b64 = os.environ.get("APNS_KEY_B64")
+    if b64:
+        import base64
+        _cached_key = base64.b64decode(b64).decode()
+        _cached_key_path = path
+        return _cached_key
+    # Priority 2: file path
     abs_path = os.path.abspath(path)
     if not os.path.exists(abs_path):
         logger.warning("[APNs] key file not found: %s", abs_path)
