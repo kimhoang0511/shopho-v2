@@ -58,6 +58,7 @@ async def _push_new_order_alerts(
                     ShipperAlert.user_id != creator_id,
                     or_(ShipperAlert.min_gold.is_(None),
                         ShipperAlert.min_gold <= gold_reward),
+                    DeviceToken.platform != "ios_voip",
                 )
                 .distinct()
             )
@@ -84,7 +85,7 @@ class OrderError(Exception):
 
 async def _push(db: AsyncSession, user_id: uuid.UUID, title: str, body: str, order_id: uuid.UUID) -> None:
     result = await db.execute(select(DeviceToken).where(DeviceToken.user_id == user_id))
-    tokens = [row.token for row in result.scalars().all()]
+    tokens = [row.token for row in result.scalars().all() if row.platform != "ios_voip"]
     stale = await send_push(tokens, title, body, {"order_id": str(order_id)})
     await prune_stale_tokens(db, stale)
 

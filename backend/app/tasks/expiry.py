@@ -31,7 +31,7 @@ async def _acquire_job_lock(job_name: str, ttl_seconds: int) -> bool:
 async def _push(db, user_id: uuid.UUID, title: str, body: str, order_id) -> None:
     try:
         result = await db.execute(select(DeviceToken).where(DeviceToken.user_id == user_id))
-        tokens = [r.token for r in result.scalars().all()]
+        tokens = [r.token for r in result.scalars().all() if r.platform != "ios_voip"]
         stale = await send_push(tokens, title, body, {"order_id": str(order_id)})
         await prune_stale_tokens(db, stale)
     except Exception as e:

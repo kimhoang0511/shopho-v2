@@ -168,11 +168,15 @@ class OrderDetailScreen extends ConsumerWidget {
                 subtitle: 'Kết nối trực tiếp P2P, miễn phí',
                 onTap: () async {
                   Navigator.pop(sheetCtx);
+                  // Wait for bottom sheet close animation before showing any dialog
+                  await Future.delayed(const Duration(milliseconds: 300));
+                  if (!context.mounted) return;
 
-                  // On iOS, once denied the system won't show the dialog again —
-                  // check status first and redirect to Settings if permanently denied.
                   final micStatus = await Permission.microphone.status;
-                  if (micStatus.isPermanentlyDenied) {
+
+                  // isPermanentlyDenied = iOS "denied" (system won't re-ask)
+                  // isRestricted = parental controls
+                  if (micStatus.isPermanentlyDenied || micStatus.isRestricted) {
                     if (context.mounted) {
                       showDialog(
                         context: context,
@@ -201,13 +205,41 @@ class OrderDetailScreen extends ConsumerWidget {
                     return;
                   }
 
-                  // Not yet determined or denied → show system permission dialog
+                  // notDetermined (shows system dialog) or re-request
                   final granted = await CallService.requestMicPermission();
                   if (!granted) {
+                    // After request, check if now permanently denied (user just tapped "Don't Allow")
+                    final afterStatus = await Permission.microphone.status;
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Cần quyền microphone để thực hiện cuộc gọi')),
-                      );
+                      if (afterStatus.isPermanentlyDenied) {
+                        showDialog(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            title: const Text('Cần quyền microphone'),
+                            content: const Text(
+                              'Ứng dụng chưa được cấp quyền microphone.\n'
+                              'Vào Cài đặt → Kinme → bật Microphone để thực hiện cuộc gọi.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Huỷ'),
+                              ),
+                              FilledButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  openAppSettings();
+                                },
+                                child: const Text('Mở Cài đặt'),
+                              ),
+                            ],
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Cần quyền microphone để thực hiện cuộc gọi')),
+                        );
+                      }
                     }
                     return;
                   }
