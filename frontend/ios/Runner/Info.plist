@@ -54,6 +54,8 @@
 		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Ứng dụng cần truy cập mạng nội bộ để kết nối cuộc gọi WebRTC</string>
 	<key>NSMicrophoneUsageDescription</key>
