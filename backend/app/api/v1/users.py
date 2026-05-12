@@ -219,6 +219,92 @@ async def test_push_self(
     }
 
 
+@router.post("/me/test-voip-push")
+async def test_voip_push_self(
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(current_user_id),
+):
+    """Diagnostic endpoint: test APNs VoIP push to the caller's own iOS device.
+    Returns APNs config status, registered VoIP tokens, and the push result.
+    Call via: POST /api/v1/users/me/test-voip-push (with auth header)
+    """
+    from app.models.user import DeviceToken
+    from app.config import get_settings
+    import os
+
+    s = get_settings()
+
+    # Config check
+    key_b64_set = bool(os.environ.get("APNS_KEY_B64"))
+    key_file_exists = False
+    try:
+        import os as _os
+        key_file_exists = _os.path.exists(_os.path.abspath(s.apns_key_path))
+    except Exception:
+        pass
+
+    config = {
+        "app_env": s.app_env,
+        "apns_endpoint": "sandbox (api.sandbox.push.apple.com)" if s.app_env == "development" else "production (api.push.apple.com)",
+        "apns_key_id": s.apns_key_id or "NOT SET",
+        "apns_team_id": s.apns_team_id or "NOT SET",
+        "apns_bundle_id": s.apns_bundle_id or "NOT SET",
+        "apns_topic": f"{s.apns_bundle_id}.voip" if s.apns_bundle_id else "NOT SET",
+        "key_source": "APNS_KEY_B64 env var" if key_b64_set else (f"file: {s.apns_key_path}" if key_file_exists else "NOT FOUND"),
+        "configured": bool(s.apns_key_id and s.apns_team_id and s.apns_bundle_id and (key_b64_set or key_file_exists)),
+    }
+
+    # VoIP tokens
+    result = await db.execute(
+        select(DeviceToken).where(DeviceToken.user_id == user_id, DeviceToken.platform == "ios_voip")
+    )
+    voip_tokens = result.scalars().all()
+
+    if not voip_tokens:
+        return {
+            "config": config,
+            "voip_tokens": [],
+            "push_results": [],
+            "hint": "Không có VoIP token. Đăng xuất và đăng nhập lại trên iOS để đăng ký token.",
+        }
+
+    if not config["configured"]:
+        return {
+            "config": config,
+            "voip_tokens": [t.token[:16] + "…" for t in voip_tokens],
+            "push_results": [],
+            "hint": "APNs chưa cấu hình đủ. Kiểm tra env vars trên Railway.",
+        }
+
+    from app.core.apns import send_voip_push
+    import time as _time
+
+    push_results = []
+    test_data = {
+        "type": "call",
+        "call_id": "test-voip-diag",
+        "caller_name": "Test VoIP",
+        "order_id": "00000000-0000-0000-0000-000000000000",
+        "livekit_url": "",
+        "room_name": "test-room",
+        "initiated_at": str(int(_time.time())),
+        "order_note": "VoIP diagnostic test",
+    }
+    for token_row in voip_tokens:
+        try:
+            await send_voip_push(token_row.token, test_data)
+            push_results.append({"token": token_row.token[:16] + "…", "result": "sent (check Railway logs for APNs response)"})
+        except Exception as e:
+            push_results.append({"token": token_row.token[:16] + "…", "result": f"error: {e}"})
+
+    return {
+        "config": config,
+        "voip_tokens": [t.token[:16] + "…" for t in voip_tokens],
+        "push_results": push_results,
+        "hint": "Kiểm tra Railway logs để xem APNs response (200 = ok, 400/410 = lỗi token/config)",
+    }
+
+
 # ─── Browse-alert (notification when new order matches filter) ─
 
 class _AlertLocation(BaseModel):

@@ -64,20 +64,35 @@ async def send_voip_push(voip_token: str, data: dict) -> None:
     s = get_settings()
 
     if not s.apns_key_id or not s.apns_team_id or not s.apns_bundle_id:
-        logger.debug("[APNs] VoIP not configured — skipping")
+        logger.warning(
+            "[APNs] VoIP push SKIPPED — APNS_KEY_ID, APNS_TEAM_ID, or APNS_BUNDLE_ID not set. "
+            "iOS calls will NOT ring when app is killed. Set these env vars and APNS_KEY_B64 to fix."
+        )
         return
 
     key_pem = _load_key(s.apns_key_path)
     if not key_pem:
+        logger.error("[APNs] Cannot load .p8 key — check APNS_KEY_B64 env var or APNS_KEY_PATH file")
         return
 
-    auth_token = _make_jwt(key_pem, s.apns_key_id, s.apns_team_id)
+    try:
+        auth_token = _make_jwt(key_pem, s.apns_key_id, s.apns_team_id)
+    except Exception as e:
+        logger.error("[APNs] JWT signing failed: %s — check .p8 key format", e)
+        return
+
     host = _APNS_SANDBOX if s.app_env == "development" else _APNS_PROD
+    topic = f"{s.apns_bundle_id}.voip"
+
+    logger.info(
+        "[APNs] sending VoIP push → token=%s… host=%s topic=%s key_id=%s",
+        voip_token[:10], host, topic, s.apns_key_id,
+    )
 
     headers = {
         "authorization": f"bearer {auth_token}",
         "apns-push-type": "voip",
-        "apns-topic": f"{s.apns_bundle_id}.voip",
+        "apns-topic": topic,
         "apns-priority": "10",
     }
 
@@ -89,9 +104,12 @@ async def send_voip_push(voip_token: str, data: dict) -> None:
                 json=data,
             )
         if resp.status_code == 200:
-            logger.info("[APNs] VoIP push sent → %s…", voip_token[:10])
+            logger.info("[APNs] VoIP push OK → %s…", voip_token[:10])
         else:
-            logger.error("[APNs] VoIP push failed %s: %s", resp.status_code, resp.text)
+            logger.error(
+                "[APNs] VoIP push FAILED status=%s body=%s token=%s…",
+                resp.status_code, resp.text, voip_token[:10],
+            )
     except Exception as e:
         logger.error("[APNs] VoIP push error: %s", e)
 

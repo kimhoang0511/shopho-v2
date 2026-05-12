@@ -29,7 +29,7 @@ apscheduler==3.10.4
 # LiveKit (voice call token generation)
 livekit-api==0.7.1
 
-# APNs VoIP push (iOS call notifications)
+# APNs VoIP push (iOS call notifications) — http2=True requires the h2 extra
 httpx[http2]==0.28.0
 
 # Rate limiting (Redis-backed, works across multiple workers)
@@ -37,7 +37,6 @@ slowapi==0.1.9
 
 # Utils
 python-dotenv==1.0.1
-httpx==0.28.0
 
 # Firebase Cloud Messaging
 firebase-admin==6.5.0
