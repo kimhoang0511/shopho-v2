@@ -94,17 +94,27 @@ async def register_device_token(
     user_id: uuid.UUID = Depends(current_user_id),
 ):
     from app.models.user import DeviceToken
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
     token = body.get("token", "").strip()
     platform = body.get("platform", "android").strip()
     if not token:
         return
-    stmt = (
-        pg_insert(DeviceToken)
-        .values(user_id=user_id, token=token, platform=platform)
-        .on_conflict_do_nothing()
+    # Remove token from any other user first — prevents one physical device
+    # from receiving notifications for multiple users after a user switch.
+    await db.execute(
+        delete(DeviceToken).where(
+            DeviceToken.token == token,
+            DeviceToken.user_id != user_id,
+        )
     )
-    await db.execute(stmt)
+    # Insert for current user if not already present
+    exists = await db.scalar(
+        select(DeviceToken.id).where(
+            DeviceToken.token == token,
+            DeviceToken.user_id == user_id,
+        )
+    )
+    if not exists:
+        db.add(DeviceToken(user_id=user_id, token=token, platform=platform))
     await db.commit()
 
 
