@@ -79,7 +79,7 @@ class FcmService {
     // Init local notifications plugin — tap on foreground notification navigates to order
     await _localNotif.initialize(
       const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('@drawable/ic_notification'),
         iOS: DarwinInitializationSettings(),
       ),
       onDidReceiveNotificationResponse: (details) {
