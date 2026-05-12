@@ -16,8 +16,9 @@ const _channelName = 'Đơn hàng';
 
 final _localNotif = FlutterLocalNotificationsPlugin();
 
+// Top-level function referenced from main.dart — must be a top-level symbol.
 @pragma('vm:entry-point')
-Future<void> _backgroundHandler(RemoteMessage message) async {
+Future<void> fcmBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   if (message.data['type'] == 'call') {
     final initiatedAt = int.tryParse(message.data['initiated_at'] ?? '');
@@ -63,8 +64,10 @@ class FcmService {
   }) async {
     _navigate = onNavigateToOrder;
 
-    await Firebase.initializeApp(options: options);
-    FirebaseMessaging.onBackgroundMessage(_backgroundHandler);
+    // Firebase.initializeApp() and onBackgroundMessage() are called in main()
+    // before runApp() so the onMessageOpenedApp listener is ready on iOS before
+    // the first frame. onMessageOpenedApp and getInitialMessage are also handled
+    // in main(). Here we only set up the foreground & local-notification plumbing.
 
     // Android notification channel
     const androidChannel = AndroidNotificationChannel(
@@ -90,29 +93,13 @@ class FcmService {
       },
     );
 
-    // iOS foreground presentation
+    // iOS: don't show FCM native banner in foreground — onMessage shows a local
+    // notification with an orderId payload for reliable tap navigation.
     await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-      alert: true,
+      alert: false,
       badge: true,
-      sound: true,
+      sound: false,
     );
-
-    // App in background → user taps FCM notification → navigate to order
-    FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      final orderId = message.data['order_id'] as String?;
-      if (orderId != null && orderId.isNotEmpty) {
-        _navigate?.call(orderId);
-      }
-    });
-
-    // App terminated → opened via FCM notification → store and navigate after first frame
-    final initial = await FirebaseMessaging.instance.getInitialMessage();
-    if (initial != null) {
-      final orderId = initial.data['order_id'] as String?;
-      if (orderId != null && orderId.isNotEmpty) {
-        _pendingOrderId = orderId;
-      }
-    }
 
     // Show notification when app is in foreground
     FirebaseMessaging.onMessage.listen((message) {
@@ -168,12 +155,33 @@ class FcmService {
       );
     });
 
-    // Request permission (iOS/Android 13+)
-    await FirebaseMessaging.instance.requestPermission(
+    // Request permission (iOS/Android 13+) + pre-warm APNs token on iOS
+    final settings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
+
+    // iOS: trigger APNs registration at startup so the token is ready by login time.
+    // getAPNSToken() returns null until Apple's servers respond — retry up to 10s.
+    if (defaultTargetPlatform == TargetPlatform.iOS &&
+        (settings.authorizationStatus == AuthorizationStatus.authorized ||
+         settings.authorizationStatus == AuthorizationStatus.provisional)) {
+      _preWarmApnsToken();
+    }
+  }
+
+  static Future<void> _preWarmApnsToken() async {
+    for (int i = 0; i < 5; i++) {
+      final apns = await FirebaseMessaging.instance.getAPNSToken();
+      if (apns != null) {
+        debugPrint('[FCM] APNs pre-warm OK: ${apns.substring(0, 10)}…');
+        return;
+      }
+      debugPrint('[FCM] APNs pre-warm retry ${i + 1}/5…');
+      await Future.delayed(const Duration(seconds: 2));
+    }
+    debugPrint('[FCM] APNs pre-warm failed — token not available at startup');
   }
 
   /// Register FCM + VoIP tokens with the backend. Call after login.
@@ -205,6 +213,23 @@ class FcmService {
 
   static Future<void> _registerFcmToken(Dio dio) async {
     try {
+      // iOS: APNs token phải có trước thì getToken() mới hoạt động.
+      // Retry tối đa 10 lần (10 giây) chờ APNs cấp token.
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        String? apnsToken;
+        for (int i = 0; i < 10; i++) {
+          apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+          if (apnsToken != null) break;
+          debugPrint('[FCM] APNs token null — retry ${i + 1}/10…');
+          await Future.delayed(const Duration(seconds: 1));
+        }
+        if (apnsToken == null) {
+          debugPrint('[FCM] APNs token not available after 10s — push will not work on iOS');
+          return;
+        }
+        debugPrint('[FCM] APNs token ready: ${apnsToken.substring(0, 10)}…');
+      }
+
       String? token = await FirebaseMessaging.instance.getToken();
 
       // getToken() returns null if permission hasn't been granted yet — retry once.
@@ -249,11 +274,24 @@ class FcmService {
 
   static Future<void> _registerVoipToken(Dio dio) async {
     try {
-      final voipToken = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
-      if (voipToken == null || voipToken.toString().isEmpty) return;
+      // PushKit token is delivered asynchronously — retry up to 10s.
+      String? voipToken;
+      for (int i = 0; i < 5; i++) {
+        final t = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
+        if (t != null && t.toString().isNotEmpty) {
+          voipToken = t.toString();
+          break;
+        }
+        debugPrint('[FCM] VoIP token null — retry ${i + 1}/5…');
+        await Future.delayed(const Duration(seconds: 2));
+      }
+      if (voipToken == null) {
+        debugPrint('[FCM] VoIP token not available after retries');
+        return;
+      }
       await dio.post(
         '/users/me/device-token',
-        data: {'token': voipToken.toString(), 'platform': 'ios_voip'},
+        data: {'token': voipToken, 'platform': 'ios_voip'},
       );
       debugPrint('[FCM] VoIP token registered');
     } catch (e) {
@@ -267,10 +305,16 @@ class FcmService {
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
-        await dio.delete(
-          '/users/me/device-token',
-          data: {'token': token},
-        );
+        await dio.delete('/users/me/device-token', data: {'token': token});
+      }
+      // Remove VoIP token on iOS
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        try {
+          final voipToken = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
+          if (voipToken != null && voipToken.toString().isNotEmpty) {
+            await dio.delete('/users/me/device-token', data: {'token': voipToken.toString()});
+          }
+        } catch (_) {}
       }
       // Invalidate token so a fresh one is generated on next login
       await FirebaseMessaging.instance.deleteToken();

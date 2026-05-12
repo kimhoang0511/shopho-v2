@@ -20,6 +20,8 @@ import 'features/orders/presentation/screens/edit_order_screen.dart';
 import 'features/orders/presentation/screens/my_orders_screen.dart';
 import 'features/orders/presentation/screens/order_detail_screen.dart';
 import 'core/services/call_service.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'core/services/fcm_service.dart';
 import 'core/services/user_event_socket.dart';
 import 'core/services/version_check_service.dart';
@@ -30,6 +32,25 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   timeago.setLocaleMessages('vi', timeago.ViMessages());
 
+  // Initialize Firebase before runApp so the onMessageOpenedApp listener is
+  // registered before the first frame. On iOS, tapping a background notification
+  // emits the event immediately on resume — if the listener is registered later
+  // (inside _initServices which runs after runApp) the event is already gone.
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseMessaging.onBackgroundMessage(fcmBackgroundHandler);
+
+  // Background tap: app was suspended, user tapped notification → app resumes.
+  FirebaseMessaging.onMessageOpenedApp.listen((message) {
+    final orderId = message.data['order_id'] as String?;
+    if (orderId != null && orderId.isNotEmpty) {
+      _router.go('/orders/$orderId');
+    }
+  });
+
+  // Cold-start tap: app was killed, user tapped notification → app launched.
+  final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+  final launchOrderId = initialMessage?.data['order_id'] as String?;
+
   // Pre-read auth token so GoRouter redirect is synchronous — avoids white screen
   // on iOS where async Keychain reads delay first frame render.
   try {
@@ -39,8 +60,14 @@ void main() async {
 
   runApp(const ProviderScope(child: ShopHoApp()));
 
-  // Initialize services after first frame — FCM requestPermission on iOS shows
-  // a system dialog that would block if awaited before runApp.
+  // Navigate to order from cold-start notification tap (must be after runApp)
+  if (launchOrderId != null && launchOrderId.isNotEmpty) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _router.go('/orders/$launchOrderId');
+    });
+  }
+
+  // FCM requestPermission on iOS shows a system dialog — must run after runApp.
   _initServices();
 }
 
@@ -112,11 +139,6 @@ Future<void> _initServices() async {
     }
   }
 
-  // Handle notification-driven launch (app was killed, user tapped notification)
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    final orderId = FcmService.consumePendingNavigation();
-    if (orderId != null) _router.go('/orders/$orderId');
-  });
 }
 
 final _navKey = GlobalKey<NavigatorState>();
