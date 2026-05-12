@@ -56,11 +56,11 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBxHUGbIScLdG7Z2CmUYjV_qBjDEQT9Uyk',
-    appId: '1:376434193584:ios:59f44fef2969c4819ef775',
+    appId: '1:376434193584:ios:a3d8ea0001abc7a79ef775',
     messagingSenderId: '376434193584',
     projectId: 'shopho-578a7',
     storageBucket: 'shopho-578a7.firebasestorage.app',
-    iosBundleId: 'com.example.shopho',
+    iosBundleId: 'com.kinme.app',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
