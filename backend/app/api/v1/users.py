@@ -125,6 +125,90 @@ async def unregister_device_token(
     await db.commit()
 
 
+@router.post("/me/test-push")
+async def test_push_self(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(current_user_id),
+):
+    """Send a test push notification to the caller's own registered devices.
+
+    Optional body fields:
+    - title: str  (default: "Test thông báo")
+    - message: str (default: "Push notification hoạt động!")
+    - type: "normal" | "call" | "missed_call"  (default: "normal")
+    """
+    from app.models.user import DeviceToken
+    from app.core.fcm import send_push, prune_stale_tokens
+    import firebase_admin
+
+    notif_type = body.get("type", "normal")
+    title = body.get("title", "Test thông báo")
+    message = body.get("message", "Push notification hoạt động!")
+
+    result = await db.execute(select(DeviceToken).where(DeviceToken.user_id == user_id))
+    all_tokens = result.scalars().all()
+
+    if not all_tokens:
+        return {"tokens": [], "error": "Không có device token nào được đăng ký"}
+
+    # Check FCM init status
+    fcm_ready = bool(firebase_admin._apps)
+
+    # Build data payload based on type
+    if notif_type == "call":
+        data = {
+            "type": "call",
+            "call_id": "test-call-id",
+            "caller_name": "Test Caller",
+            "order_id": "00000000-0000-0000-0000-000000000000",
+            "livekit_url": "",
+            "room_name": "test-room",
+            "initiated_at": "0",
+            "order_note": "Test cuộc gọi",
+        }
+        fcm_tokens = [t for t in all_tokens if t.platform != "ios_voip"]
+    elif notif_type == "missed_call":
+        data = {
+            "type": "missed_call",
+            "call_id": "test-missed-id",
+            "caller_name": "Test Caller",
+            "order_id": "00000000-0000-0000-0000-000000000000",
+        }
+        fcm_tokens = [t for t in all_tokens if t.platform != "ios_voip"]
+    else:
+        data = {"type": "test", "order_id": "00000000-0000-0000-0000-000000000000"}
+        fcm_tokens = [t for t in all_tokens if t.platform != "ios_voip"]
+
+    token_list = [t.token for t in fcm_tokens]
+    stale = await send_push(token_list, title, message, data) if token_list else []
+    stale_set = set(stale)
+    await prune_stale_tokens(db, stale)
+
+    token_results = []
+    for t in all_tokens:
+        if t.platform == "ios_voip":
+            status = "skipped (VoIP — không dùng FCM)"
+        elif t.token in stale_set:
+            status = "stale — đã xóa"
+        else:
+            status = "sent"
+        token_results.append({
+            "platform": t.platform,
+            "token_preview": t.token[:16] + "…",
+            "status": status,
+            "registered_at": t.created_at.isoformat() if t.created_at else None,
+        })
+
+    return {
+        "fcm_initialized": fcm_ready,
+        "type": notif_type,
+        "title": title,
+        "message": message,
+        "tokens": token_results,
+    }
+
+
 # ─── Browse-alert (notification when new order matches filter) ─
 
 class _AlertLocation(BaseModel):
