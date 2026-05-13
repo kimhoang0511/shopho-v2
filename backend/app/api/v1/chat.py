@@ -205,7 +205,7 @@ async def initiate_call(
                     title=f"📞 Cuộc gọi từ {caller_name}",
                     body="Nhấn để trả lời",
                     data=call_data,
-                    data_only=False,
+                    data_only=True,
                     ttl_seconds=40,
                 )
                 stale.extend(s)
