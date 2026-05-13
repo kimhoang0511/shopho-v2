@@ -294,20 +294,24 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       // Background/lock-screen accept: navigate once the app fully resumes.
       _navigatePendingCall();
       if (Platform.isIOS) {
-        // iOS: When accepting from the lock screen, multiple async operations
-        // must complete (MethodChannel reads, secure storage, VoIP UserDefaults)
-        // before _pendingAcceptedCall is set. A single 700ms retry is not enough
-        // on slower devices or under memory pressure. Use a periodic check for
-        // the first 3 seconds to ensure navigation always happens.
+        // iOS: When accepting from the lock screen while the app is backgrounded,
+        // native delegates may not fire reliably. Use a robust multi-strategy poll:
+        // 1. checkPendingNativeAccept — reads kPendingAccept from UserDefaults.
+        // 2. recoverAcceptedCallKitCall — polls activeCalls() directly (most reliable).
+        // 3. _navigatePendingCall — consumes _pendingAcceptedCall once set.
         _iosResumeRetryCount = 0;
+        _pendingAcceptedCallWasConsumed = false;
         _iosResumeTimer?.cancel();
         _iosResumeTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
           _iosResumeRetryCount++;
           _navigatePendingCall();
           CallService.checkPendingNativeAccept();
+          if (!_pendingAcceptedCallWasConsumed) {
+            CallService.recoverAcceptedCallKitCall();
+          }
           _checkPendingNotifTap();
-          // Stop after 3 seconds (10 attempts) or when a call is found.
-          if (_iosResumeRetryCount >= 10 || _pendingAcceptedCallWasConsumed) {
+          // Stop after 4.5 seconds (15 attempts) or when a call is found.
+          if (_iosResumeRetryCount >= 15 || _pendingAcceptedCallWasConsumed) {
             timer.cancel();
             _iosResumeTimer = null;
           }

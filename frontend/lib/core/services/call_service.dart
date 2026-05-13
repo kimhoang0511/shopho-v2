@@ -329,6 +329,115 @@ class CallService {
     }
   }
 
+  /// Called periodically on iOS resume to directly check for active accepted
+  /// CallKit calls that were not handled by the EventChannel or native accept
+  /// paths. This is the most reliable fallback because it polls the plugin's
+  /// own internal state — no dependency on delegates or timing.
+  static Future<void> recoverAcceptedCallKitCall() async {
+    if (!Platform.isIOS) return;
+    try {
+      final active = await FlutterCallkitIncoming.activeCalls();
+      if (active is! List || active.isEmpty) return;
+
+      for (final call in active) {
+        final callId = call['id'] as String? ?? '';
+        if (callId.isEmpty) continue;
+
+        // Already handled — skip.
+        if (_handledAcceptCallIds.contains(callId)) continue;
+        if (_pendingAcceptedCall?['callId'] == callId) continue;
+
+        // Check if the call was accepted.
+        final isAccepted = call['isAccepted'] as bool? ?? false;
+        if (!isAccepted) continue;
+
+        // Extract call data from extra (set when showCallkitIncoming was called,
+        // either from Dart or natively from VoIP push).
+        final extra = call['extra'] as Map?;
+        String? orderId = extra?['order_id']?.toString();
+        String callerName = extra?['caller_name']?.toString() ?? 'Người gọi';
+        String livekitUrl = extra?['livekit_url']?.toString() ?? '';
+        String orderNote = extra?['order_note']?.toString() ?? '';
+
+        // Fallback: in-memory cache.
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          final cached = _inMemoryCallCache[callId];
+          if (cached != null) {
+            orderId = cached['order_id'];
+            if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
+            if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
+            if ((cached['order_note'] ?? '').isNotEmpty) orderNote = cached['order_note']!;
+          }
+        }
+
+        // Fallback: secure storage.
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          final saved = await _loadCallData(callId);
+          if (saved != null) {
+            orderId = saved['order_id'];
+            if ((saved['caller_name'] ?? '').isNotEmpty) callerName = saved['caller_name']!;
+            if ((saved['livekit_url'] ?? '').isNotEmpty) livekitUrl = saved['livekit_url']!;
+            if ((saved['order_note'] ?? '').isNotEmpty) orderNote = saved['order_note']!;
+          }
+        }
+
+        // Fallback: onAccept native snapshot.
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          try {
+            final full = await _nativeChannel.invokeMethod<Map?>('getPendingCallFull', callId);
+            if (full != null) {
+              orderId = full['order_id']?.toString();
+              final cn = full['caller_name']?.toString();
+              if (cn != null && cn.isNotEmpty) callerName = cn;
+              final lu = full['livekit_url']?.toString();
+              if (lu != null && lu.isNotEmpty) livekitUrl = lu;
+              final on = full['order_note']?.toString();
+              if (on != null && on.isNotEmpty) orderNote = on;
+            }
+          } catch (_) {}
+        }
+
+        // Fallback: VoIP push data from UserDefaults.
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          try {
+            final voip = await _nativeChannel.invokeMethod<Map?>('getVoipCallData', callId);
+            if (voip != null) {
+              orderId = voip['order_id']?.toString();
+              final cn = voip['caller_name']?.toString();
+              if (cn != null && cn.isNotEmpty) callerName = cn;
+              final lu = voip['livekit_url']?.toString();
+              if (lu != null && lu.isNotEmpty) livekitUrl = lu;
+              final on = voip['order_note']?.toString();
+              if (on != null && on.isNotEmpty) orderNote = on;
+            }
+          } catch (_) {}
+        }
+
+        if (orderId == null || orderId.isEmpty) continue;
+
+        debugPrint('[CallService] recoverAcceptedCallKitCall: found accepted call $callId orderId=$orderId');
+        _handledAcceptCallIds.add(callId);
+        _activeCallIds.add(callId);
+        _inMemoryCallCache.remove(callId);
+        _clearCallData(callId).ignore();
+        _prefetchRecipientToken(orderId);
+        await Permission.microphone.request();
+        final callInfo = {
+          'orderId': orderId,
+          'callerName': callerName,
+          'livekitUrl': livekitUrl,
+          'callId': callId,
+          'orderNote': orderNote,
+        };
+        _pendingAcceptedCall = callInfo;
+        acceptedCallNotifier.value = callInfo;
+        break; // one call at a time
+      }
+    } catch (e) {
+      debugPrint('[CallService] recoverAcceptedCallKitCall error: $e');
+    }
+  }
+
   static Future<void> _recoverMissedAcceptedCall() async {
     try {
       final active = await FlutterCallkitIncoming.activeCalls();
