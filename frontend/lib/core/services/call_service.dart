@@ -512,12 +512,35 @@ class CallService {
       case Event.actionCallDecline:
       case Event.actionCallTimeout:
         // Keep callId in _activeCallIds — prevents delayed FCM/WS re-showing.
+        // IMPORTANT: look up orderId BEFORE clearing caches.
+        final extra = event.body['extra'] as Map?;
+        String? orderId = extra?['order_id']?.toString();
+
+        // Fallback: in-memory cache (same-isolate WS / FCM-foreground path).
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          final cached = _inMemoryCallCache[callId];
+          if (cached != null) orderId = cached['order_id'];
+        }
+
+        // Fallback: persistent storage (killed-app / FCM background isolate).
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
+          final saved = await _loadCallData(callId);
+          if (saved != null) orderId = saved['order_id'];
+        }
+
+        // Fallback: iOS VoIP push payload saved in UserDefaults by AppDelegate.
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty && Platform.isIOS) {
+          try {
+            final voip = await _nativeChannel.invokeMethod<Map?>('getVoipCallData', callId);
+            if (voip != null) orderId = voip['order_id']?.toString();
+          } catch (_) {}
+        }
+
         _inMemoryCallCache.remove(callId);
         _clearCallData(callId).ignore();
         await FlutterCallkitIncoming.endAllCalls();
-        final extra = event.body['extra'] as Map?;
-        final orderId = extra?['order_id'] as String?;
-        if (orderId != null && callId.isNotEmpty) {
+
+        if (orderId != null && orderId.isNotEmpty && callId.isNotEmpty) {
           _sendCancel(orderId, callId).ignore();
         }
         break;
