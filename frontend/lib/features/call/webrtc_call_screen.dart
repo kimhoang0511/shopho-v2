@@ -516,11 +516,13 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
         //   2. Backend ground truth (GET /calls/{callId}/status - reliable, server-side)
         // For callers (isCaller), we primarily use the backend to avoid false-positives
         // from stale LiveKit participants. Recipients use LiveKit directly (caller joins first).
+        int _pollTick = 0;
         _remotePollTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
           if (_disposed || !mounted || _callState == _CallState.talking) {
             _remotePollTimer?.cancel();
             return;
           }
+          _pollTick++;
           final remotes = _room.remoteParticipants;
 
           // For recipients: LiveKit local check is sufficient - the caller always
@@ -541,18 +543,20 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
             return;
           }
 
-          // For callers: check backend ground truth every 2s to avoid
-          // false-positives from stale LiveKit participants.
-          // (Throttle: only check every other tick = ~2s)
-          if (isCaller && widget.callId.isNotEmpty && _elapsed.inSeconds % 2 == 0) {
+          // For callers: check backend ground truth every 2s.
+          // Uses dedicated tick counter (not _elapsed which is 0 during connecting).
+          if (isCaller && widget.callId.isNotEmpty && _pollTick % 2 == 0) {
             try {
               final dio = ref.read(apiClientProvider).dio;
               final res = await dio.get('/calls/${widget.callId}/status');
               final connected = res.data['connected'] == true;
               final cancelled = res.data['cancelled'] == true;
               if (cancelled) {
-                _log('remotePoll(caller): backend says CANCELLED');
                 _remotePollTimer?.cancel();
+                _ringTimeout?.cancel();
+                _log('remotePoll(caller): backend says CANCELLED -> noAnswer');
+                if (mounted) setState(() => _callState = _CallState.noAnswer);
+                Future.delayed(const Duration(seconds: 2), () => _hangup(sendCancel: false));
                 return;
               }
               if (connected && mounted && _callState != _CallState.talking) {
