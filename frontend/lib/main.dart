@@ -37,18 +37,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   timeago.setLocaleMessages('vi', timeago.ViMessages());
 
-  // Firebase init + background/foreground listeners must be registered before
-  // runApp. On iOS, onMessageOpenedApp fires immediately on app resume — if the
-  // listener is not yet registered the event is lost forever.
   try {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     FirebaseMessaging.onBackgroundMessage(fcmBackgroundHandler);
 
-    // Background tap: app was suspended, user tapped notification → app resumes.
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
       final type = message.data['type'] as String?;
       if (type == 'call') {
-        // Android notification tap: show incoming call (CallKit UI + navigate)
         final initiatedAt = int.tryParse(message.data['initiated_at'] ?? '');
         CallService.showIncomingCall(
           callId: message.data['call_id'] ?? '',
@@ -70,25 +65,17 @@ void main() async {
     debugPrint('[main] Firebase init error: $e');
   }
 
-  // Pre-read auth token so GoRouter redirect is synchronous — avoids white screen
-  // on iOS where async Keychain reads delay first frame render.
   try {
     authTokenNotifier.value =
         await const FlutterSecureStorage().read(key: 'access_token');
   } catch (_) {}
 
-  // runApp MUST be called before getInitialMessage(). On iOS, getInitialMessage()
-  // waits for the APNs/FCM service to be ready which can take several seconds —
-  // awaiting it before runApp causes a blank white screen.
   runApp(UncontrolledProviderScope(container: _container, child: const ShopHoApp()));
 
-  // Cold-start tap: app was killed, user tapped notification → app launched.
-  // Resolved asynchronously after runApp so it never blocks the first frame.
   FirebaseMessaging.instance.getInitialMessage().then((msg) {
     if (msg == null) return;
     final type = msg.data['type'] as String?;
     if (type == 'call') {
-      // Android cold-start from call notification tap: show incoming call
       final initiatedAt = int.tryParse(msg.data['initiated_at'] ?? '');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         CallService.showIncomingCall(
@@ -111,13 +98,9 @@ void main() async {
     }
   }).ignore();
 
-  // FCM requestPermission on iOS shows a system dialog — must run after runApp.
   _initServices();
 }
 
-/// Fetches a short-lived (5-min) ephemeral token from the backend for use in
-/// WebSocket URLs. If the ephemeral token endpoint fails, falls back to the
-/// current full access token so the connection is not blocked.
 Future<String?> _wsTokenProvider() async {
   final accessToken = authTokenNotifier.value;
   if (accessToken == null) return null;
@@ -136,24 +119,17 @@ Future<String?> _wsTokenProvider() async {
 }
 
 Future<void> _initServices() async {
-  // 1. CallService first — EventChannel listener must be registered before
-  //    FcmService (which can block up to 15 s on first run).
   try {
     await CallService.init();
   } catch (e) {
     debugPrint('[main] CallService.init: $e');
   }
 
-  // 2. Connect WebSocket immediately — do NOT wait for FcmService.
-  //    The backend delivers pending calls (Redis) as soon as WS connects.
-  //    If we wait for FcmService first, the 45-second call TTL may expire
-  //    before WS connects and the incoming call is never delivered.
   final existingToken = authTokenNotifier.value;
   if (existingToken != null) {
     UserEventSocket.connect(_wsTokenProvider).ignore();
   }
 
-  // 3. FCM init can take up to 15 s (iOS permission dialog) — run last.
   try {
     await FcmService.init(
       DefaultFirebaseOptions.currentPlatform,
@@ -162,11 +138,6 @@ Future<void> _initServices() async {
     debugPrint('[main] FcmService.init: $e');
   }
 
-  // Re-register FCM/VoIP tokens on every cold start — handles stale tokens
-  // that accumulate when Firebase rotates them while the app is killed.
-  // Only runs if the user is already authenticated (no re-login needed).
-  // Use apiBaseUrl constant directly — api_base_url in secure storage may be
-  // absent on first cold start after install (written only after first login).
   if (existingToken != null) {
     try {
       final dio = Dio(BaseOptions(
@@ -180,25 +151,17 @@ Future<void> _initServices() async {
       debugPrint('[main] token re-registration error: $e');
     }
   }
-
 }
 
 final _navKey = GlobalKey<NavigatorState>();
 
-/// Global container so non-widget code (notification handlers) can invalidate
-/// Riverpod providers (e.g. force-refresh order data on notification tap).
 final _container = ProviderContainer();
 
-/// Navigate to an order detail screen AND signal all live order providers to
-/// re-fetch. This ensures data is always fresh after a push notification tap,
-/// even if the user is already on the same screen.
 void _navigateToOrder(String orderId) {
   _router.go('/orders/$orderId');
   _container.read(ordersRefreshProvider.notifier).state++;
 }
 
-// GoRouter uses refreshListenable to re-run redirect synchronously whenever
-// authTokenNotifier changes — no async reads, no blank screen.
 final _router = GoRouter(
   navigatorKey: _navKey,
   initialLocation: '/login',
@@ -258,10 +221,17 @@ class ShopHoApp extends StatefulWidget {
 class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   static const _notifTapChannel = MethodChannel('shopho/notif_tap');
 
-  // iOS resume retry state — periodic check for lock-screen accept.
+  // iOS resume retry state.
   int _iosResumeRetryCount = 0;
   Timer? _iosResumeTimer;
   bool _pendingAcceptedCallWasConsumed = false;
+
+  // ROOT CAUSE FIX: When acceptedCallNotifier fires while the app is in the
+  // background (e.g. user accepted from iOS lock screen), _router.push is
+  // called but silently fails because the navigator is not visible. Meanwhile
+  // consumePendingAcceptedCall() already consumed the data, so it's lost.
+  // This field saves the call info so it can be navigated on resume.
+  Map<String, String>? _backgroundAcceptedCall;
 
   @override
   void initState() {
@@ -271,8 +241,6 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     FcmService.pendingOrderTapNotifier.addListener(_onPendingOrderTap);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _navigatePendingCall();
-      // iOS: check for a notification tap that arrived before the engine was ready
-      // (cold-start from killed state — AppDelegate.didReceive saved to UserDefaults).
       if (Platform.isIOS) _checkPendingNotifTap();
       final ctx = _navKey.currentContext;
       if (ctx != null) await VersionCheckService.check(ctx);
@@ -291,40 +259,39 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Background/lock-screen accept: navigate once the app fully resumes.
+      // FIRST: navigate any call that was accepted while backgrounded.
+      // This is the critical fix — _router.push silently fails when backgrounded,
+      // so we save the call data in _backgroundAcceptedCall and retry here.
+      _navigateBackgroundAcceptedCall();
+
+      // Also check for newly available call data.
       _navigatePendingCall();
       if (Platform.isIOS) {
-        // iOS: When accepting from the lock screen while the app is backgrounded,
-        // native delegates may not fire reliably. Use a robust multi-strategy poll:
-        // 1. checkPendingNativeAccept — reads kPendingAccept from UserDefaults.
-        // 2. recoverAcceptedCallKitCall — polls activeCalls() directly (most reliable).
-        // 3. _navigatePendingCall — consumes _pendingAcceptedCall once set.
         _iosResumeRetryCount = 0;
         _pendingAcceptedCallWasConsumed = false;
         _iosResumeTimer?.cancel();
         _iosResumeTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
           _iosResumeRetryCount++;
+          // Check background accepted call first (highest priority).
+          _navigateBackgroundAcceptedCall();
           _navigatePendingCall();
           CallService.checkPendingNativeAccept();
           if (!_pendingAcceptedCallWasConsumed) {
             CallService.recoverAcceptedCallKitCall();
           }
           _checkPendingNotifTap();
-          // Stop after 4.5 seconds (15 attempts) or when a call is found.
           if (_iosResumeRetryCount >= 15 || _pendingAcceptedCallWasConsumed) {
             timer.cancel();
             _iosResumeTimer = null;
           }
         });
       }
-      // Reconnect WebSocket in case Android killed it while screen was off.
       if (authTokenNotifier.value != null) {
         UserEventSocket.connect(_wsTokenProvider).ignore();
       }
     }
   }
 
-  // Triggered whenever FcmService.pendingOrderTapNotifier gets a non-null orderId.
   void _onPendingOrderTap() {
     final orderId = FcmService.pendingOrderTapNotifier.value;
     if (orderId == null || orderId.isEmpty) return;
@@ -334,8 +301,6 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     });
   }
 
-  // Reads the order_id saved by AppDelegate.didReceive and feeds it to the notifier.
-  // Handles both cold-start and background→foreground notification taps on iOS.
   void _checkPendingNotifTap() async {
     try {
       final orderId = await _notifTapChannel.invokeMethod<String?>('getPendingOrderTap');
@@ -345,11 +310,43 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  /// Navigate a call that was accepted while the app was in the background.
+  /// This is the key fix for the iOS lock-screen accept issue.
+  void _navigateBackgroundAcceptedCall() {
+    final call = _backgroundAcceptedCall;
+    if (call == null) return;
+    _backgroundAcceptedCall = null;
+    _pendingAcceptedCallWasConsumed = true;
+    debugPrint('[main] _navigateBackgroundAcceptedCall: navigating to call ${call['orderId']}');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _router.push(
+        '/call/${call['orderId']}',
+        extra: {
+          'name': call['callerName'] ?? 'Người gọi',
+          'livekit_url': call['livekitUrl'] ?? '',
+          'token': '',
+          'call_id': call['callId'] ?? '',
+          'order_note': call['orderNote'] ?? '',
+        },
+      );
+    });
+  }
+
   void _navigatePendingCall() {
     final call = CallService.consumePendingAcceptedCall();
     if (call == null) return;
+
+    // Check if app is currently in the foreground. If backgrounded, save the
+    // call data for later navigation on resume — _router.push silently fails
+    // when the app is not visible.
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != AppLifecycleState.resumed) {
+      debugPrint('[main] _navigatePendingCall: app is $lifecycle, saving call for later navigation');
+      _backgroundAcceptedCall = call;
+      return;
+    }
+
     _pendingAcceptedCallWasConsumed = true;
-    // Defer to next frame so the navigator is guaranteed to be mounted.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _router.push(
         '/call/${call['orderId']}',
