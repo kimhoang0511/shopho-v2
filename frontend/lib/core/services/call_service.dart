@@ -523,7 +523,8 @@ class CallService {
         String callerName = extra?['caller_name']?.toString() ?? 'Người gọi';
         String livekitUrl = extra?['livekit_url']?.toString() ?? '';
         String orderNote = extra?['order_note']?.toString() ?? '';
-        CallDebugLogger.log("CS", "actionCallAccept", data: {"callId": callId, "orderId": orderId?.toString()}); debugPrint("[CallService] actionCallAccept callId=$callId orderId=$orderId extra keys=${extra?.keys.toList()}');
+                CallDebugLogger.log('CS', 'actionCallAccept', data: {'callId': callId, 'orderId': orderId?.toString()});
+        debugPrint('[CallService] actionCallAccept callId=$callId orderId=$orderId extra keys=${extra?.keys.toList()}');
 
         // Fallback 1: onAccept native snapshot — written synchronously by
         // AppDelegate.onAccept before this EventChannel event was processed.
