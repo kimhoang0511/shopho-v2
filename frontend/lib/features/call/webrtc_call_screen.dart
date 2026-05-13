@@ -490,17 +490,25 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
 
         // Fallback: poll for remote participants every 1s.
         // LiveKit events may not fire reliably when remote connects from background.
+        // IMPORTANT: must check joinedAt > callInitiatedAt to avoid false-positive
+        // from stale participants left over from a previous call on the same order.
         _remotePollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
           if (_disposed || !mounted || _callState == _CallState.talking) {
             _remotePollTimer?.cancel();
             return;
           }
           final remotes = _room.remoteParticipants;
-          if (remotes.isNotEmpty) {
+          // For callers: only consider participants who joined AFTER this call started.
+          // Recipients always see the caller (who joined first), so no filter needed.
+          final isNewRemote = remotes.values.any((p) {
+            if (!isCaller) return true; // recipient: any remote is the caller
+            return p.joinedAt.isAfter(callInitiatedAt);
+          });
+          if (remotes.isNotEmpty && isNewRemote) {
             _remotePollTimer?.cancel();
             _remoteEverConnected = true;
             _ringTimeout?.cancel();
-            _log('remotePoll: found ${remotes.length} remote(s) → talking');
+            _log('remotePoll: found ${remotes.length} remote(s) isNewRemote=true → talking');
             setState(() => _callState = _CallState.talking);
             _startDurationTimer();
             if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
