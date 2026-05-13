@@ -315,24 +315,36 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
 
   void _navigateBackgroundAcceptedCall() {
     final call = _backgroundAcceptedCall;
-    if (call == null) return;
+    if (call == null) {
+      CallDebugLogger.log('main', 'navigateBgCall: NULL, skip');
+      return;
+    }
     _backgroundAcceptedCall = null;
     _pendingAcceptedCallWasConsumed = true;
-    CallDebugLogger.log('main', 'navigateBgCall → /call/${call['orderId']}', data: {
+    CallDebugLogger.log('main', 'navigateBgCall → PUSH /call/${call['orderId']}', data: {
       'callId': call['callId'],
+      'orderId': call['orderId'],
       'lifecycle': WidgetsBinding.instance.lifecycleState.toString(),
+      'keys': call.keys.toList().toString(),
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _router.push(
-        '/call/${call['orderId']}',
-        extra: {
-          'name': call['callerName'] ?? 'Người gọi',
-          'livekit_url': call['livekitUrl'] ?? '',
-          'token': '',
-          'call_id': call['callId'] ?? '',
-          'order_note': call['orderNote'] ?? '',
-        },
-      );
+      try {
+        CallDebugLogger.log('main', 'bg router.push START');
+        _router.push(
+          '/call/${call['orderId']}',
+          extra: {
+            'name': call['callerName'] ?? 'Người gọi',
+            'livekit_url': call['livekitUrl'] ?? '',
+            'token': '',
+            'call_id': call['callId'] ?? '',
+            'order_note': call['orderNote'] ?? '',
+          },
+        );
+        CallDebugLogger.log('main', 'bg router.push DONE');
+      } catch (e, st) {
+        CallDebugLogger.log('main', 'bg router.push FAILED', data: {'error': e.toString()});
+        debugPrint('[main] bg router.push error: $e\n$st');
+      }
     });
   }
 
@@ -356,16 +368,23 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     _pendingAcceptedCallWasConsumed = true;
     CallDebugLogger.log('main', 'PUSH → /call/${call['orderId']}');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _router.push(
-        '/call/${call['orderId']}',
-        extra: {
-          'name': call['callerName'] ?? 'Người gọi',
-          'livekit_url': call['livekitUrl'] ?? '',
-          'token': '',
-          'call_id': call['callId'] ?? '',
-          'order_note': call['orderNote'] ?? '',
-        },
-      );
+      try {
+        CallDebugLogger.log('main', 'pending router.push START');
+        _router.push(
+          '/call/${call['orderId']}',
+          extra: {
+            'name': call['callerName'] ?? 'Người gọi',
+            'livekit_url': call['livekitUrl'] ?? '',
+            'token': '',
+            'call_id': call['callId'] ?? '',
+            'order_note': call['orderNote'] ?? '',
+          },
+        );
+        CallDebugLogger.log('main', 'pending router.push DONE');
+      } catch (e, st) {
+        CallDebugLogger.log('main', 'pending router.push FAILED', data: {'error': e.toString()});
+        debugPrint('[main] pending router.push error: $e');
+      }
     });
   }
 
