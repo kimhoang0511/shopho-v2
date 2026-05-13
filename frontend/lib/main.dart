@@ -330,6 +330,14 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   }
 
   void _navigatePendingCall() {
+    // Don't consume + navigate while the app is in the background. The router
+    // push silently fails when the widget tree is not visible, and the data
+    // gets consumed — leaving nothing to navigate when the app resumes.
+    // Only navigate when the app is in foreground (resumed) or transitioning (inactive).
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != AppLifecycleState.resumed &&
+        lifecycle != AppLifecycleState.inactive) return;
+
     final call = CallService.consumePendingAcceptedCall();
     if (call == null) return;
     // Defer to next frame so the navigator is guaranteed to be mounted.
