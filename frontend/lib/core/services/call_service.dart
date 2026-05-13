@@ -1,3 +1,4 @@
+import 'background_call_service.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -300,6 +301,12 @@ class CallService {
     _inMemoryCallCache.remove(callId);
     _clearCallData(callId).ignore();
     _prefetchRecipientToken(orderId);
+    // Start background LiveKit connection (connects while app is paused)
+    BackgroundCallService.startConnection(
+      callId: callId,
+      orderId: orderId,
+      livekitUrl: livekitUrl,
+    ).ignore();
     await Permission.microphone.request();
 
     final callInfo = {

@@ -9,6 +9,7 @@ import 'package:livekit_client/livekit_client.dart';
 import '../../core/api/api_client.dart';
 import '../../core/services/call_cancel_notifier.dart';
 import '../../core/services/call_service.dart';
+import '../../core/services/background_call_service.dart';
 
 enum _CallState { connecting, talking, noAnswer, ended }
 
@@ -88,7 +89,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
   void initState() {
     super.initState();
     _createdAt = DateTime.now();
-    _room = Room();
+    _room = Room();  // Will be replaced by bg connection if available
     // Clear any stale cancel signal from a previous call.
     callCancelNotifier.value = null;
     callCancelNotifier.addListener(_onRemoteCancel);
@@ -201,8 +202,94 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
     Future.delayed(const Duration(seconds: 2), () => _hangup(sendCancel: false));
   }
 
+  /// Use a pre-connected Room from BackgroundCallService.
+  /// Skips token fetch + room connect + audio publish (already done in background).
+  Future<void> _useExistingConnection() async {
+    try {
+      _log('background: room already connected, setting up listener');
+
+      if (Platform.isIOS && widget.callId.isNotEmpty && widget.token.isEmpty) {
+        _log('iOS bg: setCallConnected + restartAudio');
+        await FlutterCallkitIncoming.setCallConnected(widget.callId);
+        CallService.restartAudioForCallKit()
+            .then((_) => _log('restartAudio(bg) done'))
+            .catchError((e) { _log('restartAudio(bg) ERR: $e'); return null; });
+      }
+
+      // Check if remote participant already connected
+      final remoteParticipants = _room.remoteParticipants;
+      if (remoteParticipants.isNotEmpty) {
+        _log('background: remote already in room! → talking');
+        _remoteEverConnected = true;
+        _ringTimeout?.cancel();
+        if (mounted) setState(() => _callState = _CallState.talking);
+        _startDurationTimer();
+        if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+      }
+
+      // Phase 3: listen for remote participant
+      _listener = _room.createListener()
+        ..on<ParticipantConnectedEvent>((_) {
+          _log('ParticipantConnectedEvent (bg)');
+          _remoteEverConnected = true;
+          if (mounted && _callState != _CallState.talking) {
+            _ringTimeout?.cancel();
+            setState(() => _callState = _CallState.talking);
+            _startDurationTimer();
+            if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+          }
+          if (Platform.isIOS) {
+            CallService.restartAudioForCallKit()
+                .then((_) => _log('restartAudio(bg-PC) done'))
+                .catchError((e) { _log('restartAudio(bg-PC) ERR: $e'); return null; });
+          }
+        })
+        ..on<TrackPublishedEvent>((e) {
+          if (e.publication.kind == TrackType.AUDIO) {
+            _log('TrackPublishedEvent(AUDIO-bg)');
+            if (mounted && _callState != _CallState.talking) {
+              _ringTimeout?.cancel();
+              setState(() => _callState = _CallState.talking);
+              _startDurationTimer();
+              if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+            }
+            if (Platform.isIOS) {
+              CallService.restartAudioForCallKit()
+                  .then((_) => _log('restartAudio(bg-TP) done'))
+                  .catchError((e) { _log('restartAudio(bg-TP) ERR: $e'); return null; });
+            }
+          }
+        })
+        ..on<ParticipantDisconnectedEvent>((_) => _onRemoteDisconnect())
+        ..on<RoomDisconnectedEvent>((_) {
+          _log('RoomDisconnectedEvent (bg)');
+          _onRemoteDisconnect();
+        });
+
+      _log('background: setup complete, waiting for remote');
+    } catch (e) {
+      _log('_useExistingConnection FAILED: $e');
+      // Fall through to normal _init flow by reconnecting
+      _room.disconnect().then((_) => _room.dispose()).ignore();
+      _room = Room();
+    }
+  }
+
   Future<void> _init() async {
     _log('_init START  lifecycle=${WidgetsBinding.instance.lifecycleState}');
+
+    // Check for pre-connected background Room
+    final bgResult = BackgroundCallService.consume();
+    if (bgResult != null) {
+      _log('_init: using BACKGROUND connection (already connected!)');
+      _room = bgResult.room;
+      _audioTrack = bgResult.audioTrack;
+      _roomConnectedAt = DateTime.now();
+      await _useExistingConnection();
+      return;
+    }
+
+    _log('_init: no background connection, proceeding normally');
     String token;
     String livekitUrl = widget.livekitUrl;
 
