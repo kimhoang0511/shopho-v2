@@ -45,6 +45,21 @@ void main() async {
 
     // Background tap: app was suspended, user tapped notification → app resumes.
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      final type = message.data['type'] as String?;
+      if (type == 'call') {
+        // Android notification tap: show incoming call (CallKit UI + navigate)
+        final initiatedAt = int.tryParse(message.data['initiated_at'] ?? '');
+        CallService.showIncomingCall(
+          callId: message.data['call_id'] ?? '',
+          callerName: message.data['caller_name'] ?? 'Người gọi',
+          orderId: message.data['order_id'] ?? '',
+          livekitUrl: message.data['livekit_url'] ?? '',
+          roomName: message.data['room_name'] ?? '',
+          initiatedAt: initiatedAt,
+          orderNote: message.data['order_note'] ?? '',
+        );
+        return;
+      }
       final orderId = message.data['order_id'] as String?;
       if (orderId != null && orderId.isNotEmpty) {
         FcmService.pendingOrderTapNotifier.value = orderId;
@@ -69,7 +84,25 @@ void main() async {
   // Cold-start tap: app was killed, user tapped notification → app launched.
   // Resolved asynchronously after runApp so it never blocks the first frame.
   FirebaseMessaging.instance.getInitialMessage().then((msg) {
-    final orderId = msg?.data['order_id'] as String?;
+    if (msg == null) return;
+    final type = msg.data['type'] as String?;
+    if (type == 'call') {
+      // Android cold-start from call notification tap: show incoming call
+      final initiatedAt = int.tryParse(msg.data['initiated_at'] ?? '');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        CallService.showIncomingCall(
+          callId: msg.data['call_id'] ?? '',
+          callerName: msg.data['caller_name'] ?? 'Người gọi',
+          orderId: msg.data['order_id'] ?? '',
+          livekitUrl: msg.data['livekit_url'] ?? '',
+          roomName: msg.data['room_name'] ?? '',
+          initiatedAt: initiatedAt,
+          orderNote: msg.data['order_note'] ?? '',
+        );
+      });
+      return;
+    }
+    final orderId = msg.data['order_id'] as String?;
     if (orderId != null && orderId.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         FcmService.pendingOrderTapNotifier.value = orderId;

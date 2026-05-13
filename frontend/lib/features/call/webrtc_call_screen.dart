@@ -50,6 +50,15 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
   bool _disposed = false;
   bool _remoteAudioSubscribed = false;
 
+  /// Timestamp when the LiveKit room was successfully connected.
+  /// Used to ignore stale ParticipantDisconnectedEvent from previous calls
+  /// in the same room (same order-id reuse).
+  DateTime? _roomConnectedAt;
+
+  /// Whether at least one remote participant has ever connected during this
+  /// call session. Guards against stale disconnect events from previous calls.
+  bool _remoteEverConnected = false;
+
   Timer? _durationTimer;
   Timer? _ringTimeout;
   Duration _elapsed = Duration.zero;
@@ -99,6 +108,26 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
 
   void _onRemoteDisconnect() {
     if (_disposed || !mounted) return;
+
+    // Grace period: ignore stale ParticipantDisconnectedEvent that may fire
+    // from a previous call's participant still in the LiveKit room.
+    // Room names are reused per order (order-{id}), so a participant from
+    // a prior call may disconnect after we connect — we must not treat this
+    // as the current remote hanging up.
+    if (_roomConnectedAt != null &&
+        DateTime.now().difference(_roomConnectedAt!) < const Duration(seconds: 5) &&
+        !_remoteEverConnected) {
+      _log('_onRemoteDisconnect: IGNORED (within 5s grace, no remote ever connected)');
+      return;
+    }
+
+    // If we've never seen a remote participant connect during this session,
+    // the disconnect is from a stale participant — ignore it.
+    if (!_remoteEverConnected && _callState == _CallState.connecting) {
+      _log('_onRemoteDisconnect: IGNORED (no remote ever connected, still connecting)');
+      return;
+    }
+
     _durationTimer?.cancel();
     _ringTimeout?.cancel();
     if (_callState == _CallState.talking) {
@@ -204,6 +233,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
       final trackFuture = LocalAudioTrack.create(const AudioCaptureOptions());
 
       await connectFuture;
+      _roomConnectedAt = DateTime.now();
       _log('room connected  lifecycle=${WidgetsBinding.instance.lifecycleState}');
       _audioTrack = await trackFuture;
       _log('audio track created');
@@ -222,6 +252,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
       _listener = _room.createListener()
         ..on<ParticipantConnectedEvent>((_) {
           _log('ParticipantConnectedEvent  lifecycle=${WidgetsBinding.instance.lifecycleState}');
+          _remoteEverConnected = true;
           if (mounted && _callState != _CallState.talking) {
             _ringTimeout?.cancel();
             setState(() => _callState = _CallState.talking);
@@ -317,6 +348,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
       );
       _log('activeRemote=$activeRemote  remoteCount=${_room.remoteParticipants.length}');
       if (activeRemote && mounted) {
+        _remoteEverConnected = true;
         _ringTimeout?.cancel();
         setState(() => _callState = _CallState.talking);
         _startDurationTimer();
@@ -450,6 +482,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
                   _StateBadge(
                     state: _callState,
                     elapsed: _elapsed,
+                    isCaller: widget.token.isNotEmpty,
                   ),
                   if (widget.orderNote.isNotEmpty) ...[
                     const SizedBox(height: 16),
@@ -601,12 +634,13 @@ class _StateIndicator extends StatelessWidget {
 class _StateBadge extends StatelessWidget {
   final _CallState state;
   final Duration elapsed;
-  const _StateBadge({required this.state, required this.elapsed});
+  final bool isCaller;
+  const _StateBadge({required this.state, required this.elapsed, required this.isCaller});
 
   String get _label => switch (state) {
     _CallState.connecting => 'Đang kết nối',
     _CallState.talking    => _fmt(elapsed),
-    _CallState.noAnswer   => 'Đã ngắt cuộc gọi',
+    _CallState.noAnswer   => isCaller ? 'Không có trả lời' : 'Đã ngắt cuộc gọi',
     _CallState.ended      => 'Cuộc gọi đã kết thúc',
   };
 

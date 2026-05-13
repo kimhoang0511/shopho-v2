@@ -187,50 +187,50 @@ async def initiate_call(
     # users get it immediately without waiting for FCM delivery.
     await r.publish(_user_channel(recipient_id), json.dumps(call_data))
 
-    # Android: notification+data (NOT data-only) so the system shows a
-    # high-priority notification even when the background handler is killed
-    # by OEM battery optimization (Xiaomi, Oppo, Vivo, Huawei, etc.).
-    # When the user taps the notification, the app opens and navigates to
-    # the call screen via onMessageOpenedApp / getInitialMessage.
-    # ttl_seconds=40: queue for up to 40s so brief offline/handoff periods
-    # (WiFi → LTE, screen-off Doze exit) don't silently drop the call.
-    stale: list[str] = []
+    # Return the caller token IMMEDIATELY — don't block on FCM/APNs delivery.
+    # FCM and VoIP pushes are fire-and-forget: they run in background tasks so
+    # the caller's app opens the call screen without waiting for push delivery
+    # (which can take 200-500ms+ for APNs HTTP/2 TLS handshake to Apple servers).
 
-    # Split tokens by platform — Android needs notification+data, iOS can use data-only.
-    android_tokens = [r.token for r in all_tokens if r.platform == "android"]
-    ios_fcm_tokens = [r.token for r in all_tokens if r.platform not in ("android", "ios_voip")]
+    async def _send_pushes() -> None:
+        """Fire-and-forget: deliver FCM + VoIP pushes in the background."""
+        try:
+            stale: list[str] = []
+            android_tokens = [r.token for r in all_tokens if r.platform == "android"]
+            ios_fcm_tokens = [r.token for r in all_tokens if r.platform not in ("android", "ios_voip")]
 
-    if android_tokens:
-        s = await send_push(
-            tokens=android_tokens,
-            title=f"📞 Cuộc gọi từ {caller_name}",
-            body="Nhấn để trả lời",
-            data=call_data,
-            data_only=False,
-            ttl_seconds=40,
-        )
-        stale.extend(s)
+            if android_tokens:
+                s = await send_push(
+                    tokens=android_tokens,
+                    title=f"📞 Cuộc gọi từ {caller_name}",
+                    body="Nhấn để trả lời",
+                    data=call_data,
+                    data_only=False,
+                    ttl_seconds=40,
+                )
+                stale.extend(s)
 
-    # iOS non-VoIP: data-only (APNs content-available). The VoIP push below
-    # is the primary wake mechanism; this is a secondary fallback.
-    if ios_fcm_tokens:
-        s = await send_push(
-            tokens=ios_fcm_tokens,
-            title=f"Cuộc gọi từ {caller_name}",
-            body="Đang gọi...",
-            data=call_data,
-            data_only=True,
-            ttl_seconds=40,
-        )
-        stale.extend(s)
+            if ios_fcm_tokens:
+                s = await send_push(
+                    tokens=ios_fcm_tokens,
+                    title=f"Cuộc gọi từ {caller_name}",
+                    body="Đang gọi...",
+                    data=call_data,
+                    data_only=True,
+                    ttl_seconds=40,
+                )
+                stale.extend(s)
 
-    # iOS background/killed: APNs VoIP (PushKit) — guaranteed to wake app
-    if voip_tokens:
-        await send_voip_push_multi(voip_tokens, call_data)
+            if voip_tokens:
+                await send_voip_push_multi(voip_tokens, call_data)
 
-    # Remove tokens FCM rejected as permanently invalid (non-blocking)
-    if stale:
-        await prune_stale_tokens(db, stale)
+            if stale:
+                async with SessionLocal() as db_bg:
+                    await prune_stale_tokens(db_bg, stale)
+        except Exception:
+            logger.exception("Background push delivery failed for call %s", call_id)
+
+    asyncio.create_task(_send_pushes())
 
     return {
         "call_id": call_id,
