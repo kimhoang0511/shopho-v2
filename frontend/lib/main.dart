@@ -258,7 +258,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     CallDebugLogger.log('main', 'lifecycle → $state');
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed || (Platform.isIOS && state == AppLifecycleState.inactive && _backgroundAcceptedCall != null)) {
       CallDebugLogger.log('main', 'RESUMED: bgCall=${_backgroundAcceptedCall != null} retry=$_iosResumeRetryCount');
 
       _navigateBackgroundAcceptedCall();
@@ -359,7 +359,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       'lifecycle': lifecycle.toString(),
     });
 
-    if (lifecycle != AppLifecycleState.resumed) {
+    if (lifecycle != AppLifecycleState.resumed && lifecycle != AppLifecycleState.inactive) {
       CallDebugLogger.log('main', 'SAVED to _backgroundAcceptedCall (app not resumed)');
       _backgroundAcceptedCall = call;
       return;
