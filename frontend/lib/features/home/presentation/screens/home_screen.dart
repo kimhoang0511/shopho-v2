@@ -32,20 +32,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
 
-  // ── Debug log ──────────────────────────────────────────────
-  final List<String> _dbg = [];
   bool _showDebug = false;
 
   void _dlog(String msg) {
-    final ts = DateTime.now();
-    final s = '[${ts.hour.toString().padLeft(2,'0')}:'
-        '${ts.minute.toString().padLeft(2,'0')}:'
-        '${ts.second.toString().padLeft(2,'0')}.'
-        '${(ts.millisecond ~/ 10).toString().padLeft(2,'0')}] $msg';
-    debugPrint('[HomeDebug] $s');
-    if (mounted) setState(() { _dbg.add(s); if (_dbg.length > 60) _dbg.removeAt(0); });
-    // Also sync to global CallDebugLogger
-    CallDebugLogger.log("Home", msg);
+    debugPrint('[HomeDebug] $msg');
+    CallDebugLogger.log('Home', msg);
+    // Trigger overlay refresh if visible
+    if (_showDebug && mounted) setState(() {});
   }
 
   void _onAcceptedCallChanged() {
@@ -106,16 +99,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   Future<void> _openTopup() async {
     try {
-      // Use a short-lived ephemeral token (5 min) instead of the full access_token
-      // to limit the exposure window if this URL appears in browser history or server logs.
       final res = await ref.read(apiClientProvider).dio.post('/users/me/ephemeral-token');
       final token = res.data['token'] as String?;
       if (token == null || !mounted) return;
       final uri = Uri.parse('$_kTopupWebUrl?token=${Uri.encodeComponent(token)}');
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
-      // If the ephemeral token request fails, open without token
-      // so the web app can redirect to its own auth flow.
       final uri = Uri.parse(_kTopupWebUrl);
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -127,6 +116,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final tt = Theme.of(context).textTheme;
     final meAsync = ref.watch(_meProvider);
     final orderSlots = meAsync.valueOrNull?['order_slots'] as int?;
+    final debugEvents = CallDebugLogger.events;
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -136,8 +126,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           // Debug button — tap to toggle log overlay
           IconButton(
             icon: Badge(
-              label: Text('${_dbg.length}', style: const TextStyle(fontSize: 9)),
-              isLabelVisible: _dbg.isNotEmpty,
+              label: Text('${debugEvents.length}', style: const TextStyle(fontSize: 9)),
+              isLabelVisible: debugEvents.isNotEmpty,
               child: const Icon(Icons.bug_report_outlined, size: 20),
             ),
             onPressed: () => setState(() => _showDebug = !_showDebug),
@@ -206,7 +196,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             ),
           ),
 
-          // ── Debug overlay ──────────────────────────────────
+          // ── Debug overlay (shows ALL CallDebugLogger events from main.dart, call_service, etc.) ──
           if (_showDebug)
             Positioned.fill(
               child: Container(
@@ -219,23 +209,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                           const Expanded(
                             child: Padding(
                               padding: EdgeInsets.only(left: 12),
-                              child: Text('DEBUG LOG', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 13)),
+                              child: Text('DEBUG LOG (global)', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 13)),
                             ),
                           ),
                           IconButton(
                             icon: const Icon(Icons.copy, color: Colors.white54, size: 18),
-                            tooltip: 'Copy log',
+                            tooltip: 'Copy all',
                             onPressed: () {
-                              Clipboard.setData(ClipboardData(text: _dbg.join('\n')));
+                              final text = debugEvents.map((e) => e.toString()).join('\n');
+                              Clipboard.setData(ClipboardData(text: text));
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Log copied'), duration: Duration(seconds: 1)),
+                                const SnackBar(content: Text('All logs copied'), duration: Duration(seconds: 1)),
                               );
                             },
                           ),
                           IconButton(
                             icon: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
                             tooltip: 'Clear',
-                            onPressed: () => setState(() => _dbg.clear()),
+                            onPressed: () => setState(() => CallDebugLogger.clear()),
                           ),
                           IconButton(
                             icon: const Icon(Icons.close, color: Colors.white54),
@@ -247,16 +238,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         child: ListView.builder(
                           reverse: true,
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          itemCount: _dbg.length,
+                          itemCount: debugEvents.length,
                           itemBuilder: (_, i) {
-                            final line = _dbg[_dbg.length - 1 - i];
+                            final ev = debugEvents[debugEvents.length - 1 - i];
+                            final line = ev.toString();
                             final isError = line.contains('error') || line.contains('ERROR') || line.contains('FAILED');
+                            final isMain = ev.source == 'main';
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 2),
                               child: Text(
                                 line,
                                 style: TextStyle(
-                                  color: isError ? Colors.redAccent : Colors.greenAccent,
+                                  color: isError
+                                      ? Colors.redAccent
+                                      : isMain
+                                          ? Colors.cyanAccent
+                                          : Colors.greenAccent,
                                   fontSize: 10,
                                   fontFamily: 'monospace',
                                 ),
