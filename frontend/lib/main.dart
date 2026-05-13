@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -257,6 +258,11 @@ class ShopHoApp extends StatefulWidget {
 class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   static const _notifTapChannel = MethodChannel('shopho/notif_tap');
 
+  // iOS resume retry state — periodic check for lock-screen accept.
+  int _iosResumeRetryCount = 0;
+  Timer? _iosResumeTimer;
+  bool _pendingAcceptedCallWasConsumed = false;
+
   @override
   void initState() {
     super.initState();
@@ -275,6 +281,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _iosResumeTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     CallService.acceptedCallNotifier.removeListener(_navigatePendingCall);
     FcmService.pendingOrderTapNotifier.removeListener(_onPendingOrderTap);
@@ -287,19 +294,24 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       // Background/lock-screen accept: navigate once the app fully resumes.
       _navigatePendingCall();
       if (Platform.isIOS) {
-        // iOS: Event.actionCallAccept can fire up to ~600 ms after the app
-        // resumes — the first call above finds nothing, so retry once.
-        Future.delayed(const Duration(milliseconds: 700), _navigatePendingCall);
-        // iOS: check kPendingAccept (set by CXCallObserverDelegate when B
-        // accepts from the lock screen). Handles the case where the EventChannel
-        // event fired before the Dart listener was ready, or extra was empty
-        // for the VoIP push path.
-        CallService.checkPendingNativeAccept();
-        // Retry checkPendingNativeAccept once — CXCallObserverDelegate can fire
-        // up to ~600 ms after resume, mirroring the _navigatePendingCall retry.
-        Future.delayed(const Duration(milliseconds: 700), CallService.checkPendingNativeAccept);
-        // iOS: background→foreground notification tap.
-        _checkPendingNotifTap();
+        // iOS: When accepting from the lock screen, multiple async operations
+        // must complete (MethodChannel reads, secure storage, VoIP UserDefaults)
+        // before _pendingAcceptedCall is set. A single 700ms retry is not enough
+        // on slower devices or under memory pressure. Use a periodic check for
+        // the first 3 seconds to ensure navigation always happens.
+        _iosResumeRetryCount = 0;
+        _iosResumeTimer?.cancel();
+        _iosResumeTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
+          _iosResumeRetryCount++;
+          _navigatePendingCall();
+          CallService.checkPendingNativeAccept();
+          _checkPendingNotifTap();
+          // Stop after 3 seconds (10 attempts) or when a call is found.
+          if (_iosResumeRetryCount >= 10 || _pendingAcceptedCallWasConsumed) {
+            timer.cancel();
+            _iosResumeTimer = null;
+          }
+        });
       }
       // Reconnect WebSocket in case Android killed it while screen was off.
       if (authTokenNotifier.value != null) {
@@ -330,16 +342,9 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   }
 
   void _navigatePendingCall() {
-    // Don't consume + navigate while the app is in the background. The router
-    // push silently fails when the widget tree is not visible, and the data
-    // gets consumed — leaving nothing to navigate when the app resumes.
-    // Only navigate when the app is in foreground (resumed) or transitioning (inactive).
-    final lifecycle = WidgetsBinding.instance.lifecycleState;
-    if (lifecycle != AppLifecycleState.resumed &&
-        lifecycle != AppLifecycleState.inactive) return;
-
     final call = CallService.consumePendingAcceptedCall();
     if (call == null) return;
+    _pendingAcceptedCallWasConsumed = true;
     // Defer to next frame so the navigator is guaranteed to be mounted.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _router.push(
