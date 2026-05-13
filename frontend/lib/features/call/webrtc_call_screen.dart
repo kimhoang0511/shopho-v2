@@ -548,7 +548,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
           if (isCaller && widget.callId.isNotEmpty && _pollTick % 2 == 0) {
             try {
               final dio = ref.read(apiClientProvider).dio;
-              final res = await dio.get('/calls/${widget.callId}/status');
+              final res = await dio.get('/calls/${widget.callId}/status?order_id=${widget.orderId}');
               final connected = res.data['connected'] == true;
               final cancelled = res.data['cancelled'] == true;
               if (cancelled) {

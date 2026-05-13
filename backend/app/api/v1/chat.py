@@ -16,7 +16,7 @@ from datetime import timedelta
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from jose import JWTError
-from livekit.api import AccessToken, VideoGrants
+from livekit.api import AccessToken, ListParticipantsRequest, LiveKitAPI, VideoGrants
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -283,14 +283,49 @@ async def get_livekit_token(
 @router.get("/calls/{call_id}/status")
 async def call_status(
     call_id: str,
+    order_id: str = Query("", description="Order ID — enables LiveKit server-side check"),
     user: User = Depends(current_user),
 ):
     """Check call status. Returns whether the call is cancelled AND whether
-    the recipient has connected. Used by A to detect B's connection state."""
+    both parties are connected.
+    
+    When order_id is provided, queries LiveKit Server API directly to check
+    participant count — this is the GROUND TRUTH that doesn't depend on
+    client HTTP requests (which can fail when iOS device is locked).
+    Falls back to Redis flag if LiveKit check fails."""
     r = await get_redis()
     cancelled = await r.exists(f"shopho:cancelled_call:{call_id}")
-    connected = await r.exists(f"shopho:call_connected:{call_id}")
-    return {"cancelled": bool(cancelled), "connected": bool(connected)}
+    
+    # Primary: check LiveKit Server API directly (ground truth)
+    connected = False
+    if order_id:
+        try:
+            settings = get_settings()
+            lk = LiveKitAPI(
+                url=settings.livekit_url,
+                api_key=settings.livekit_api_key,
+                api_secret=settings.livekit_api_secret,
+            )
+            try:
+                room_name = _room_name(uuid.UUID(order_id))
+                participants = await lk.room.list_participants(
+                    ListParticipantsRequest(room=room_name)
+                )
+                # 2+ participants = both A and B connected
+                connected = len(participants.participants) >= 2
+                logger.info("LiveKit check: room=%s participants=%d connected=%s",
+                           room_name, len(participants.participants), connected)
+            finally:
+                await lk.aclose()
+        except Exception as e:
+            logger.warning("LiveKit check failed for call %s: %s", call_id, e)
+            # Fallback to Redis flag
+            connected = bool(await r.exists(f"shopho:call_connected:{call_id}"))
+    else:
+        # No order_id — use Redis flag (legacy)
+        connected = bool(await r.exists(f"shopho:call_connected:{call_id}"))
+    
+    return {"cancelled": bool(cancelled), "connected": connected}
 
 
 @router.post("/calls/{call_id}/connected")
