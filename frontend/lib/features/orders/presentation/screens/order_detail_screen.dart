@@ -1841,17 +1841,7 @@ class _ShipperBankCard extends StatelessWidget {
   }
 
   Future<void> _downloadQr(BuildContext context) async {
-    if (Platform.isIOS) {
-      final status = await Permission.photosAddOnly.request();
-      if (!status.isGranted) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Cần quyền truy cập ảnh để lưu'), backgroundColor: Colors.red),
-          );
-        }
-        return;
-      }
-    } else {
+    if (!Platform.isIOS) {
       // Android <10 cần WRITE_EXTERNAL_STORAGE; >=10 dùng MediaStore không cần permission
       await Permission.storage.request();
     }
