@@ -751,7 +751,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text('tiền công mua/ship', style: TextStyle(fontSize: 13)),
+                                  const Text('Tiền công mua/ship', style: TextStyle(fontSize: 13)),
                                   Text(
                                     '${order.goldReward.toStringAsFixed(0)}K',
                                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -1842,7 +1842,7 @@ class _ShipperBankCard extends StatelessWidget {
 
   Future<void> _downloadQr(BuildContext context) async {
     if (Platform.isIOS) {
-      final status = await Permission.photos.request();
+      final status = await Permission.photosAddOnly.request();
       if (!status.isGranted) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
