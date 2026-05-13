@@ -146,6 +146,15 @@ class BackgroundCallService {
     return result;
   }
 
+  /// Cancel any background connection (e.g. when call was already cancelled by A).
+  static void cancel() {
+    _log('cancel called — discarding background connection');
+    _callId = null;
+    _orderId = null;
+    _isConnecting = false;
+    _isConnected = false;
+  }
+
   static Future<void> dispose() async {
     _log('dispose called hadRoom=${_room != null} hadTrack=${_audioTrack != null}');
     final room = _room;

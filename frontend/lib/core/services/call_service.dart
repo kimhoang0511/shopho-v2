@@ -294,6 +294,26 @@ class CallService {
 
     // Only claim after we have data, and re-check in case EventChannel won.
     if (_handledAcceptCallIds.contains(callId)) return;
+
+    // CHECK: Is this call already cancelled? (A hung up before B unlocked)
+    // When B accepts from lock screen and the app resumes, the pending accept
+    // may be stale — A could have cancelled the call already. Check with backend.
+    try {
+      final dio = await _getOrBuildDio();
+      if (dio != null) {
+        final res = await dio.get('/calls/$callId/status');
+        if (res.data['cancelled'] == true) {
+          debugPrint('[CallService] _handleNativeAccept: call $callId already CANCELLED — discarding');
+          // Clean up any background connection
+          BackgroundCallService.cancel();
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('[CallService] call status check failed (network): $e — proceeding anyway');
+      // If we can't reach backend, proceed — better to show call screen than miss a real call
+    }
+
     _handledAcceptCallIds.add(callId);
 
     debugPrint('[CallService] native accept callId=$callId orderId=$orderId');
@@ -424,6 +444,20 @@ class CallService {
         if (orderId == null || orderId.isEmpty) continue;
 
         debugPrint('[CallService] recoverAcceptedCallKitCall: found accepted call $callId orderId=$orderId');
+        // CHECK: Is this call already cancelled? (A hung up before B unlocked)
+        try {
+          final dio = await _getOrBuildDio();
+          if (dio != null) {
+            final res = await dio.get('/calls/$callId/status');
+            if (res.data['cancelled'] == true) {
+              debugPrint('[CallService] recoverAcceptedCallKitCall: call $callId already CANCELLED - discarding');
+              continue;
+            }
+          }
+        } catch (e) {
+          debugPrint('[CallService] recoverAcceptedCallKitCall status check failed: $e - proceeding');
+        }
+
         _handledAcceptCallIds.add(callId);
         _activeCallIds.add(callId);
         _inMemoryCallCache.remove(callId);

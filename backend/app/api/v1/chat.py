@@ -278,6 +278,20 @@ async def get_livekit_token(
     return {"livekit_url": settings.livekit_url, "room_name": room, "token": token}
 
 
+# ─── REST: check call status ─────────────────────────────────
+
+@router.get("/calls/{call_id}/status")
+async def call_status(
+    call_id: str,
+    user: User = Depends(current_user),
+):
+    """Check if a call has been cancelled. Used by B after accepting from lock
+    screen to verify the call is still active before navigating to the call screen."""
+    r = await get_redis()
+    cancelled = await r.exists(f"shopho:cancelled_call:{call_id}")
+    return {"cancelled": bool(cancelled)}
+
+
 # ─── REST: cancel call ───────────────────────────────────────
 
 @router.post("/orders/{order_id}/call-cancel")
@@ -328,6 +342,10 @@ async def cancel_call(
 
     # Remove pending-call entries for both parties.
     await r.delete(_pending_call_key(user.id), _pending_call_key(recipient_id))
+
+    # Mark this call as cancelled so B can check before navigating to call screen
+    # (e.g. B accepted from lock screen but A already hung up).
+    await r.setex(f"shopho:cancelled_call:{call_id}", _MISSED_CALL_TTL, "1")
 
     # Send call_cancel so B dismisses the ringing UI (if still showing).
     await r.publish(_user_channel(recipient_id), json.dumps(cancel_data))
