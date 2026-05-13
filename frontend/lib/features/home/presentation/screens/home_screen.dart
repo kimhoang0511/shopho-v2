@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/services/call_debug_logger.dart';
 import '../../../../core/services/call_service.dart';
 import '../../../../core/services/fcm_service.dart';
 import '../../../../core/widgets/contact_footer.dart';
@@ -43,6 +44,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         '${(ts.millisecond ~/ 10).toString().padLeft(2,'0')}] $msg';
     debugPrint('[HomeDebug] $s');
     if (mounted) setState(() { _dbg.add(s); if (_dbg.length > 60) _dbg.removeAt(0); });
+    // Also sync to global CallDebugLogger
+    CallDebugLogger.log("Home", msg);
   }
 
   void _onAcceptedCallChanged() {

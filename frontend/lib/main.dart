@@ -23,6 +23,7 @@ import 'features/orders/presentation/screens/create_order_screen.dart';
 import 'features/orders/presentation/screens/edit_order_screen.dart';
 import 'features/orders/presentation/screens/my_orders_screen.dart';
 import 'features/orders/presentation/screens/order_detail_screen.dart';
+import 'core/services/call_debug_logger.dart';
 import 'core/services/call_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -45,6 +46,7 @@ void main() async {
       final type = message.data['type'] as String?;
       if (type == 'call') {
         final initiatedAt = int.tryParse(message.data['initiated_at'] ?? '');
+        CallDebugLogger.log('main', 'onMessageOpenedApp: call notification', data: {'call_id': message.data['call_id']});
         CallService.showIncomingCall(
           callId: message.data['call_id'] ?? '',
           callerName: message.data['caller_name'] ?? 'Người gọi',
@@ -77,6 +79,7 @@ void main() async {
     final type = msg.data['type'] as String?;
     if (type == 'call') {
       final initiatedAt = int.tryParse(msg.data['initiated_at'] ?? '');
+      CallDebugLogger.log('main', 'getInitialMessage: call notification (killed app)', data: {'call_id': msg.data['call_id']});
       WidgetsBinding.instance.addPostFrameCallback((_) {
         CallService.showIncomingCall(
           callId: msg.data['call_id'] ?? '',
@@ -119,10 +122,12 @@ Future<String?> _wsTokenProvider() async {
 }
 
 Future<void> _initServices() async {
+  CallDebugLogger.log('main', '_initServices START');
   try {
     await CallService.init();
+    CallDebugLogger.log('main', 'CallService.init DONE');
   } catch (e) {
-    debugPrint('[main] CallService.init: $e');
+    CallDebugLogger.log('main', 'CallService.init ERROR', data: {'error': e.toString()});
   }
 
   final existingToken = authTokenNotifier.value;
@@ -221,16 +226,9 @@ class ShopHoApp extends StatefulWidget {
 class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   static const _notifTapChannel = MethodChannel('shopho/notif_tap');
 
-  // iOS resume retry state.
   int _iosResumeRetryCount = 0;
   Timer? _iosResumeTimer;
   bool _pendingAcceptedCallWasConsumed = false;
-
-  // ROOT CAUSE FIX: When acceptedCallNotifier fires while the app is in the
-  // background (e.g. user accepted from iOS lock screen), _router.push is
-  // called but silently fails because the navigator is not visible. Meanwhile
-  // consumePendingAcceptedCall() already consumed the data, so it's lost.
-  // This field saves the call info so it can be navigated on resume.
   Map<String, String>? _backgroundAcceptedCall;
 
   @override
@@ -239,6 +237,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     CallService.acceptedCallNotifier.addListener(_navigatePendingCall);
     FcmService.pendingOrderTapNotifier.addListener(_onPendingOrderTap);
+    CallDebugLogger.log('main', 'initState');
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _navigatePendingCall();
       if (Platform.isIOS) _checkPendingNotifTap();
@@ -258,21 +257,23 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    CallDebugLogger.log('main', 'lifecycle → $state');
     if (state == AppLifecycleState.resumed) {
-      // FIRST: navigate any call that was accepted while backgrounded.
-      // This is the critical fix — _router.push silently fails when backgrounded,
-      // so we save the call data in _backgroundAcceptedCall and retry here.
-      _navigateBackgroundAcceptedCall();
+      CallDebugLogger.log('main', 'RESUMED: bgCall=${_backgroundAcceptedCall != null} retry=$_iosResumeRetryCount');
 
-      // Also check for newly available call data.
+      _navigateBackgroundAcceptedCall();
       _navigatePendingCall();
+
       if (Platform.isIOS) {
         _iosResumeRetryCount = 0;
         _pendingAcceptedCallWasConsumed = false;
         _iosResumeTimer?.cancel();
         _iosResumeTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
           _iosResumeRetryCount++;
-          // Check background accepted call first (highest priority).
+          CallDebugLogger.log('main', 'iOS retry #$_iosResumeRetryCount', data: {
+            'bgCall': _backgroundAcceptedCall != null,
+            'consumed': _pendingAcceptedCallWasConsumed,
+          });
           _navigateBackgroundAcceptedCall();
           _navigatePendingCall();
           CallService.checkPendingNativeAccept();
@@ -283,6 +284,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
           if (_iosResumeRetryCount >= 15 || _pendingAcceptedCallWasConsumed) {
             timer.cancel();
             _iosResumeTimer = null;
+            CallDebugLogger.log('main', 'iOS retry DONE', data: {'reason': _pendingAcceptedCallWasConsumed ? 'found' : 'timeout'});
           }
         });
       }
@@ -305,19 +307,21 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     try {
       final orderId = await _notifTapChannel.invokeMethod<String?>('getPendingOrderTap');
       if (orderId != null && orderId.isNotEmpty) {
+        CallDebugLogger.log('main', 'pendingNotifTap', data: {'orderId': orderId});
         FcmService.pendingOrderTapNotifier.value = orderId;
       }
     } catch (_) {}
   }
 
-  /// Navigate a call that was accepted while the app was in the background.
-  /// This is the key fix for the iOS lock-screen accept issue.
   void _navigateBackgroundAcceptedCall() {
     final call = _backgroundAcceptedCall;
     if (call == null) return;
     _backgroundAcceptedCall = null;
     _pendingAcceptedCallWasConsumed = true;
-    debugPrint('[main] _navigateBackgroundAcceptedCall: navigating to call ${call['orderId']}');
+    CallDebugLogger.log('main', 'navigateBgCall → /call/${call['orderId']}', data: {
+      'callId': call['callId'],
+      'lifecycle': WidgetsBinding.instance.lifecycleState.toString(),
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _router.push(
         '/call/${call['orderId']}',
@@ -336,17 +340,21 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     final call = CallService.consumePendingAcceptedCall();
     if (call == null) return;
 
-    // Check if app is currently in the foreground. If backgrounded, save the
-    // call data for later navigation on resume — _router.push silently fails
-    // when the app is not visible.
     final lifecycle = WidgetsBinding.instance.lifecycleState;
+    CallDebugLogger.log('main', 'navigatePendingCall', data: {
+      'orderId': call['orderId'],
+      'callId': call['callId'],
+      'lifecycle': lifecycle.toString(),
+    });
+
     if (lifecycle != AppLifecycleState.resumed) {
-      debugPrint('[main] _navigatePendingCall: app is $lifecycle, saving call for later navigation');
+      CallDebugLogger.log('main', 'SAVED to _backgroundAcceptedCall (app not resumed)');
       _backgroundAcceptedCall = call;
       return;
     }
 
     _pendingAcceptedCallWasConsumed = true;
+    CallDebugLogger.log('main', 'PUSH → /call/${call['orderId']}');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _router.push(
         '/call/${call['orderId']}',
