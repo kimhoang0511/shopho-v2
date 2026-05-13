@@ -160,8 +160,6 @@ class CallService {
   }
 
   static Future<void> _clearCallData(String callId) async {
-    // Also cleanup any background LiveKit connection
-    BackgroundCallService.dispose();
     try {
       await _storage.delete(key: '_call_$callId');
     } catch (_) {}
@@ -608,6 +606,12 @@ class CallService {
           _inMemoryCallCache.remove(callId);
           _clearCallData(callId).ignore();
           _prefetchRecipientToken(orderId);
+          // Start background LiveKit connection (connects while app is paused)
+          BackgroundCallService.startConnection(
+            callId: callId,
+            orderId: orderId,
+            livekitUrl: livekitUrl,
+          ).ignore();
           await Permission.microphone.request();
           final callInfo = {
             'orderId': orderId,
