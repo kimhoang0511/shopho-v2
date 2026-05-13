@@ -230,6 +230,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   Timer? _iosResumeTimer;
   bool _pendingAcceptedCallWasConsumed = false;
   Map<String, String>? _backgroundAcceptedCall;
+  DateTime? _backgroundAcceptedCallTime;
 
   @override
   void initState() {
@@ -319,7 +320,16 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       CallDebugLogger.log('main', 'navigateBgCall: NULL, skip');
       return;
     }
+    // Stale check: if saved more than 60s ago, discard (call already ended)
+    final savedAt = _backgroundAcceptedCallTime;
+    if (savedAt != null && DateTime.now().difference(savedAt).inSeconds > 60) {
+      CallDebugLogger.log('main', 'navigateBgCall: STALE (>60s), discarding');
+      _backgroundAcceptedCall = null;
+      _backgroundAcceptedCallTime = null;
+      return;
+    }
     _backgroundAcceptedCall = null;
+    _backgroundAcceptedCallTime = null;
     _pendingAcceptedCallWasConsumed = true;
     CallDebugLogger.log('main', 'navigateBgCall → PUSH /call/${call['orderId']}', data: {
       'callId': call['callId'],
@@ -362,6 +372,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     if (lifecycle != AppLifecycleState.resumed && lifecycle != AppLifecycleState.inactive) {
       CallDebugLogger.log('main', 'SAVED to _backgroundAcceptedCall (app not resumed)');
       _backgroundAcceptedCall = call;
+      _backgroundAcceptedCallTime = DateTime.now();
       return;
     }
 

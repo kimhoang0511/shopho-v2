@@ -488,31 +488,26 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
           }
         });
 
-        // Fallback: poll for remote participants every 2s.
+        // Fallback: poll for remote participants every 1s.
         // LiveKit events may not fire reliably when remote connects from background.
-        _remotePollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        _remotePollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
           if (_disposed || !mounted || _callState == _CallState.talking) {
             _remotePollTimer?.cancel();
             return;
           }
           final remotes = _room.remoteParticipants;
           if (remotes.isNotEmpty) {
-            final hasAudio = remotes.values.any(
-              (p) => p.audioTrackPublications.isNotEmpty,
-            );
-            _log('remotePoll: found ${remotes.length} remote(s) hasAudio=$hasAudio');
-            if (hasAudio) {
-              _remotePollTimer?.cancel();
-              _remoteEverConnected = true;
-              _ringTimeout?.cancel();
-              setState(() => _callState = _CallState.talking);
-              _startDurationTimer();
-              if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
-              if (Platform.isIOS) {
-                CallService.restartAudioForCallKit()
-                    .then((_) => _log('restartAudio(poll) done'))
-                    .catchError((e) { _log('restartAudio(poll) ERR: $e'); return null; });
-              }
+            _remotePollTimer?.cancel();
+            _remoteEverConnected = true;
+            _ringTimeout?.cancel();
+            _log('remotePoll: found ${remotes.length} remote(s) → talking');
+            setState(() => _callState = _CallState.talking);
+            _startDurationTimer();
+            if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+            if (Platform.isIOS) {
+              CallService.restartAudioForCallKit()
+                  .then((_) => _log('restartAudio(poll) done'))
+                  .catchError((e) { _log('restartAudio(poll) ERR: $e'); return null; });
             }
           }
         });
