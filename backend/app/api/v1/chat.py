@@ -187,20 +187,42 @@ async def initiate_call(
     # users get it immediately without waiting for FCM delivery.
     await r.publish(_user_channel(recipient_id), json.dumps(call_data))
 
-    # Android + iOS foreground: FCM data-only (high priority).
+    # Android: notification+data (NOT data-only) so the system shows a
+    # high-priority notification even when the background handler is killed
+    # by OEM battery optimization (Xiaomi, Oppo, Vivo, Huawei, etc.).
+    # When the user taps the notification, the app opens and navigates to
+    # the call screen via onMessageOpenedApp / getInitialMessage.
     # ttl_seconds=40: queue for up to 40s so brief offline/handoff periods
     # (WiFi → LTE, screen-off Doze exit) don't silently drop the call.
-    # The client-side age check (_CALL_RING_TTL_SECONDS=45) rejects stale rings.
     stale: list[str] = []
-    if fcm_tokens:
-        stale = await send_push(
-            tokens=fcm_tokens,
+
+    # Split tokens by platform — Android needs notification+data, iOS can use data-only.
+    android_tokens = [r.token for r in all_tokens if r.platform == "android"]
+    ios_fcm_tokens = [r.token for r in all_tokens if r.platform not in ("android", "ios_voip")]
+
+    if android_tokens:
+        s = await send_push(
+            tokens=android_tokens,
+            title=f"📞 Cuộc gọi từ {caller_name}",
+            body="Nhấn để trả lời",
+            data=call_data,
+            data_only=False,
+            ttl_seconds=40,
+        )
+        stale.extend(s)
+
+    # iOS non-VoIP: data-only (APNs content-available). The VoIP push below
+    # is the primary wake mechanism; this is a secondary fallback.
+    if ios_fcm_tokens:
+        s = await send_push(
+            tokens=ios_fcm_tokens,
             title=f"Cuộc gọi từ {caller_name}",
             body="Đang gọi...",
             data=call_data,
             data_only=True,
             ttl_seconds=40,
         )
+        stale.extend(s)
 
     # iOS background/killed: APNs VoIP (PushKit) — guaranteed to wake app
     if voip_tokens:
