@@ -289,6 +289,68 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
         }
       }
 
+      // IMPORTANT: Add poll timer for B (recipient) as fallback.
+      // When B resumes from iOS background, LiveKit SDK state may be stale:
+      // - remoteParticipants may be empty even though A is in the room
+      // - ParticipantConnectedEvent may not fire (A was already there)
+      // This poll checks both LiveKit local AND backend ground truth.
+      if (_callState != _CallState.talking && widget.token.isEmpty) {
+        _log('background: starting poll timer for recipient');
+        int _bgPollTick = 0;
+        _remotePollTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+          if (_disposed || !mounted || _callState == _CallState.talking) {
+            _remotePollTimer?.cancel();
+            return;
+          }
+          _bgPollTick++;
+
+          // Check 1: LiveKit local participants (fast)
+          final remotes = _room.remoteParticipants;
+          if (remotes.isNotEmpty) {
+            _remotePollTimer?.cancel();
+            _remoteEverConnected = true;
+            _ringTimeout?.cancel();
+            _log('bgPoll: found ${remotes.length} remote(s) -> talking');
+            setState(() => _callState = _CallState.talking);
+            _startDurationTimer();
+            if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+            if (Platform.isIOS) {
+              CallService.restartAudioForCallKit()
+                  .then((_) => _log('restartAudio(bgPoll) done'))
+                  .catchError((e) { _log('restartAudio(bgPoll) ERR: $e'); return null; });
+            }
+            return;
+          }
+
+          // Check 2: Backend ground truth (LiveKit Server API) every 2s
+          // This is the reliable fallback when LiveKit SDK state is stale.
+          if (widget.callId.isNotEmpty && _bgPollTick % 2 == 0) {
+            try {
+              final dio = ref.read(apiClientProvider).dio;
+              final res = await dio.get('/calls/${widget.callId}/status?order_id=${widget.orderId}');
+              final connected = res.data['connected'] == true;
+              _log('bgPoll: backend connected=$connected');
+              if (connected && mounted && _callState != _CallState.talking) {
+                _remotePollTimer?.cancel();
+                _remoteEverConnected = true;
+                _ringTimeout?.cancel();
+                _log('bgPoll: backend says CONNECTED -> talking');
+                setState(() => _callState = _CallState.talking);
+                _startDurationTimer();
+                if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+                if (Platform.isIOS) {
+                  CallService.restartAudioForCallKit()
+                      .then((_) => _log('restartAudio(bgPoll2) done'))
+                      .catchError((e) { _log('restartAudio(bgPoll2) ERR: $e'); return null; });
+                }
+              }
+            } catch (e) {
+              _log('bgPoll: backend check failed: $e');
+            }
+          }
+        });
+      }
+
       _log('background: setup complete, waiting for remote');
     } catch (e) {
       _log('_useExistingConnection FAILED: $e');
@@ -543,9 +605,13 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
             return;
           }
 
-          // For callers: check backend ground truth every 2s.
-          // Uses dedicated tick counter (not _elapsed which is 0 during connecting).
-          if (isCaller && widget.callId.isNotEmpty && _pollTick % 2 == 0) {
+          // Backend ground truth check for BOTH caller and recipient.
+          // For callers: primary source (avoid stale LiveKit participants).
+          // For recipients: fallback when LiveKit SDK state is stale after background resume.
+          // Throttle: every 2s.
+          if (widget.callId.isNotEmpty && _pollTick % 2 == 0
+              && (isCaller || _pollTick >= 3)  // recipients start checking after 3s
+              ) {
             try {
               final dio = ref.read(apiClientProvider).dio;
               final res = await dio.get('/calls/${widget.callId}/status?order_id=${widget.orderId}');
@@ -563,7 +629,7 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
                 _remotePollTimer?.cancel();
                 _remoteEverConnected = true;
                 _ringTimeout?.cancel();
-                _log('remotePoll(caller): backend says CONNECTED -> talking');
+                _log('remotePoll(${isCaller ? 'caller' : 'recipient'}): backend says CONNECTED -> talking');
                 setState(() => _callState = _CallState.talking);
                 _startDurationTimer();
                 if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
