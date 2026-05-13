@@ -268,6 +268,13 @@ async def get_livekit_token(
         display_name=display_name,
         room=room,
     )
+
+    # Clear pending-call key so that if the caller later hangs up, the
+    # cancel endpoint knows the call was already answered and skips the
+    # missed-call notification.
+    r = await get_redis()
+    await r.delete(_pending_call_key(user.id))
+
     return {"livekit_url": settings.livekit_url, "room_name": room, "token": token}
 
 
