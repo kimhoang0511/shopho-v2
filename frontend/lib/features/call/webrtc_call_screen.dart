@@ -59,6 +59,12 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
   /// call session. Guards against stale disconnect events from previous calls.
   bool _remoteEverConnected = false;
 
+  /// Timestamp when this call screen was created (initState).
+  /// Used as a hard guard: if the screen has been open for less than 3 seconds,
+  /// NO cancel/disconnect signal can transition to noAnswer — it's physically
+  /// impossible for the remote to have rung and missed the call in that time.
+  late final DateTime _createdAt;
+
   Timer? _durationTimer;
   Timer? _ringTimeout;
   Duration _elapsed = Duration.zero;
@@ -81,7 +87,10 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
   @override
   void initState() {
     super.initState();
+    _createdAt = DateTime.now();
     _room = Room();
+    // Clear any stale cancel signal from a previous call.
+    callCancelNotifier.value = null;
     callCancelNotifier.addListener(_onRemoteCancel);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -166,6 +175,17 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
     // If the call already ended normally (remote disconnected from LiveKit),
     // ignore the subsequent cancel signal — don't overwrite 'ended' with 'noAnswer'.
     if (_callState == _CallState.ended) return;
+
+    // Hard guard: ignore cancel signals that arrive less than 3 seconds after
+    // the call screen was created. It's physically impossible for the remote
+    // to have received the call, rung, and cancelled in that time — so this
+    // must be a stale cancel signal from a previous call on the same order.
+    final age = DateTime.now().difference(_createdAt);
+    if (age < const Duration(seconds: 3)) {
+      _log('_onRemoteCancel: IGNORED (call screen age=${age.inMilliseconds}ms < 3s, stale cancel from previous call)');
+      return;
+    }
+
     _ringTimeout?.cancel();
     // Only show missed call if:
     // 1. Call never reached talking state, AND
