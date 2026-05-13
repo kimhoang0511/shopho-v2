@@ -266,6 +266,17 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
           _onRemoteDisconnect();
         });
 
+      // Start ring timeout (same as normal flow: 45s)
+      if (_callState != _CallState.talking) {
+        _ringTimeout = Timer(const Duration(seconds: 45), () {
+          if (_callState != _CallState.talking && !_disposed && mounted) {
+            _log('ring timeout (bg)');
+            setState(() => _callState = _CallState.noAnswer);
+            Future.delayed(const Duration(seconds: 2), () => _hangup());
+          }
+        });
+      }
+
       _log('background: setup complete, waiting for remote');
     } catch (e) {
       _log('_useExistingConnection FAILED: $e');

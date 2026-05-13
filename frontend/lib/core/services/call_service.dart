@@ -160,6 +160,8 @@ class CallService {
   }
 
   static Future<void> _clearCallData(String callId) async {
+    // Also cleanup any background LiveKit connection
+    BackgroundCallService.dispose();
     try {
       await _storage.delete(key: '_call_$callId');
     } catch (_) {}
