@@ -8,6 +8,10 @@ final ordersRepositoryProvider = Provider<OrdersRepository>(
   (ref) => OrdersRepository(ref.read(apiClientProvider).dio),
 );
 
+/// Incrementing this counter forces all order providers that watch it to
+/// re-fetch immediately — used when a push notification signals a status change.
+final ordersRefreshProvider = StateProvider<int>((_) => 0);
+
 class OrdersRepository {
   final Dio _dio;
   OrdersRepository(this._dio);

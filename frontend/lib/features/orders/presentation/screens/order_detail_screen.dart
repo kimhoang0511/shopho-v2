@@ -41,7 +41,10 @@ String _deliveryLabel(OrderDetail order) {
 }
 
 final orderDetailProvider = FutureProvider.autoDispose.family<OrderDetail, String>(
-  (ref, id) => ref.read(ordersRepositoryProvider).getOrder(id),
+  (ref, id) {
+    ref.watch(ordersRefreshProvider);
+    return ref.read(ordersRepositoryProvider).getOrder(id);
+  },
 );
 
 final _currentUserIdProvider = FutureProvider.autoDispose<String?>((ref) async {

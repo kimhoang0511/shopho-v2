@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
@@ -10,6 +11,10 @@ import '../../core/services/call_cancel_notifier.dart';
 import '../../core/services/call_service.dart';
 
 enum _CallState { connecting, talking, noAnswer, ended }
+
+// ─── Debug log ────────────────────────────────────────────────
+// Remove or set to false before shipping to production.
+const _kDebug = true;
 
 class WebRtcCallScreen extends ConsumerStatefulWidget {
   final String orderId;
@@ -34,7 +39,8 @@ class WebRtcCallScreen extends ConsumerStatefulWidget {
   ConsumerState<WebRtcCallScreen> createState() => _WebRtcCallScreenState();
 }
 
-class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
+class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
+    with WidgetsBindingObserver {
   late final Room _room;
   EventsListener<RoomEvent>? _listener;
   LocalAudioTrack? _audioTrack;
@@ -42,23 +48,43 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
   _CallState _callState = _CallState.connecting;
   bool _muted = false;
   bool _disposed = false;
+  bool _remoteAudioSubscribed = false;
 
   Timer? _durationTimer;
   Timer? _ringTimeout;
   Duration _elapsed = Duration.zero;
   bool _cancelSent = false;
 
+  // ── Debug log ──────────────────────────────────────────────
+  final List<String> _dbg = [];
+  bool _showDebug = false;
+
+  void _log(String msg) {
+    final ts = DateTime.now();
+    final s = '[${ts.hour.toString().padLeft(2,'0')}:'
+        '${ts.minute.toString().padLeft(2,'0')}:'
+        '${ts.second.toString().padLeft(2,'0')}.'
+        '${(ts.millisecond ~/ 10).toString().padLeft(2,'0')}] $msg';
+    debugPrint('[CallDebug] $s');
+    if (_kDebug && mounted) setState(() { _dbg.add(s); if (_dbg.length > 30) _dbg.removeAt(0); });
+  }
+
   @override
   void initState() {
     super.initState();
     _room = Room();
     callCancelNotifier.addListener(_onRemoteCancel);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _log('initState — callId=${widget.callId} token=${widget.token.isEmpty ? "EMPTY(recipient)" : "PROVIDED(caller)"} lifecycle=${WidgetsBinding.instance.lifecycleState}');
+      _init();
+    });
   }
 
   @override
   void dispose() {
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     callCancelNotifier.removeListener(_onRemoteCancel);
     _durationTimer?.cancel();
     _ringTimeout?.cancel();
@@ -87,6 +113,22 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
     }
   }
 
+  // When the user taps the iOS green in-call bar (banner accept path), the app
+  // resumes from background. The audio session may have been inactive while the
+  // screen was hidden — restart it so audio flows immediately on resume.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _log('lifecycle → $state  callState=$_callState');
+    if (state == AppLifecycleState.resumed && Platform.isIOS) {
+      if (_callState == _CallState.connecting || _callState == _CallState.talking) {
+        _log('resumed: calling restartAudio');
+        CallService.restartAudioForCallKit()
+            .then((_) => _log('restartAudio(resume) done'))
+            .catchError((e) { _log('restartAudio(resume) ERR: $e'); return null; });
+      }
+    }
+  }
+
   void _onRemoteCancel() {
     final cancelId = callCancelNotifier.value;
     if (cancelId == null) return;
@@ -111,44 +153,45 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
   }
 
   Future<void> _init() async {
+    _log('_init START  lifecycle=${WidgetsBinding.instance.lifecycleState}');
     String token;
     String livekitUrl = widget.livekitUrl;
 
     // Phase 1: resolve token
-    // For recipient (token is empty): try the prefetched token first.
-    // The prefetch was started in CallService when the user tapped Accept,
-    // so it has been running in parallel with navigation — may already be done.
     try {
       if (widget.token.isEmpty) {
         final prefetchFuture = CallService.consumePrefetchedToken(widget.orderId);
         Map<String, String>? prefetched;
         if (prefetchFuture != null) {
+          _log('token: awaiting prefetch');
           prefetched = await prefetchFuture;
         }
         if (prefetched != null && prefetched['token']!.isNotEmpty) {
           token = prefetched['token']!;
           if (prefetched['livekit_url']!.isNotEmpty) livekitUrl = prefetched['livekit_url']!;
+          _log('token: from prefetch OK');
         } else {
-          // Prefetch failed or wasn't started — fall back to a fresh fetch.
+          _log('token: prefetch miss → fresh fetch');
           final res = await ref.read(apiClientProvider).dio
               .post('/orders/${widget.orderId}/livekit-token');
           token = res.data['token'] as String;
           livekitUrl = res.data['livekit_url'] as String? ?? livekitUrl;
+          _log('token: fresh fetch OK');
         }
       } else {
         token = widget.token;
+        _log('token: pre-provided (caller)');
       }
     } catch (e) {
-      debugPrint('[LiveKit] token fetch failed: $e');
+      _log('token FAILED: $e');
       if (mounted) Navigator.of(context).pop();
       return;
     }
 
     // Phase 2: connect to LiveKit room AND initialize audio track in parallel.
-    // LocalAudioTrack.create() only opens the mic — it doesn't need the room.
-    // Overlapping it with room.connect() saves ~200-400ms.
     final callInitiatedAt = DateTime.now();
     try {
+      _log('connecting to room…');
       final connectFuture = _room.connect(
         livekitUrl,
         token,
@@ -161,58 +204,140 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
       final trackFuture = LocalAudioTrack.create(const AudioCaptureOptions());
 
       await connectFuture;
+      _log('room connected  lifecycle=${WidgetsBinding.instance.lifecycleState}');
       _audioTrack = await trackFuture;
+      _log('audio track created');
       await _room.localParticipant?.publishAudioTrack(_audioTrack!);
+      _log('audio track published  lifecycle=${WidgetsBinding.instance.lifecycleState}');
 
-      // Phase 3: wait for remote participant to join
+      if (Platform.isIOS && widget.callId.isNotEmpty && widget.token.isEmpty) {
+        _log('iOS recipient: setCallConnected + restartAudio');
+        await FlutterCallkitIncoming.setCallConnected(widget.callId);
+        CallService.restartAudioForCallKit()
+            .then((_) => _log('restartAudio(1) done'))
+            .catchError((e) { _log('restartAudio(1) ERR: $e'); return null; });
+      }
+
+      // Phase 3: wait for remote participant
       _listener = _room.createListener()
         ..on<ParticipantConnectedEvent>((_) {
+          _log('ParticipantConnectedEvent  lifecycle=${WidgetsBinding.instance.lifecycleState}');
           if (mounted && _callState != _CallState.talking) {
             _ringTimeout?.cancel();
             setState(() => _callState = _CallState.talking);
             _startDurationTimer();
             if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
           }
-        })
-        ..on<TrackPublishedEvent>((e) {
-          if (e.publication.kind == TrackType.AUDIO &&
-              mounted &&
-              _callState != _CallState.talking) {
-            _ringTimeout?.cancel();
-            setState(() => _callState = _CallState.talking);
-            _startDurationTimer();
-            if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+          if (Platform.isIOS) {
+            _log('restartAudio(ParticipantConnected)');
+            CallService.restartAudioForCallKit()
+                .then((_) => _log('restartAudio(2) done'))
+                .catchError((e) { _log('restartAudio(2) ERR: $e'); return null; });
           }
         })
-        ..on<ParticipantDisconnectedEvent>((_) => _onRemoteDisconnect())
-        ..on<RoomDisconnectedEvent>((_) => _onRemoteDisconnect());
+        ..on<TrackPublishedEvent>((e) {
+          if (e.publication.kind == TrackType.AUDIO) {
+            _log('TrackPublishedEvent(AUDIO)  lifecycle=${WidgetsBinding.instance.lifecycleState}');
+            if (mounted && _callState != _CallState.talking) {
+              _ringTimeout?.cancel();
+              setState(() => _callState = _CallState.talking);
+              _startDurationTimer();
+              if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+            }
+            if (Platform.isIOS) {
+              _log('restartAudio(TrackPublished)');
+              CallService.restartAudioForCallKit()
+                  .then((_) => _log('restartAudio(3) done'))
+                  .catchError((e) { _log('restartAudio(3) ERR: $e'); return null; });
+            }
+          }
+        })
+        ..on<TrackSubscribedEvent>((e) {
+          if (e.publication.kind == TrackType.AUDIO) {
+            _log('TrackSubscribedEvent(AUDIO) participant=${e.participant.identity} muted=${e.publication.muted}');
+            if (mounted) setState(() => _remoteAudioSubscribed = true);
+            if (Platform.isIOS) {
+              _log('restartAudio(TrackSubscribed)');
+              CallService.restartAudioForCallKit()
+                  .then((_) => _log('restartAudio(5) done'))
+                  .catchError((e) { _log('restartAudio(5) ERR: $e'); return null; });
+            }
+          }
+        })
+        ..on<TrackUnsubscribedEvent>((e) {
+          if (e.publication.kind == TrackType.AUDIO) {
+            _log('TrackUnsubscribedEvent(AUDIO) participant=${e.participant.identity}');
+            if (mounted) setState(() => _remoteAudioSubscribed = false);
+          }
+        })
+        ..on<TrackMutedEvent>((e) {
+          _log('TrackMutedEvent kind=${e.publication.kind} participant=${e.participant.identity}');
+        })
+        ..on<TrackUnmutedEvent>((e) {
+          _log('TrackUnmutedEvent kind=${e.publication.kind} participant=${e.participant.identity}');
+        })
+        ..on<TrackStreamStateUpdatedEvent>((e) {
+          if (e.publication.kind == TrackType.AUDIO) {
+            _log('TrackStreamStateUpdated(AUDIO) participant=${e.participant.identity} state=${e.streamState}');
+          }
+        })
+        ..on<ActiveSpeakersChangedEvent>((e) {
+          final ids = e.speakers.map((p) => p.identity).join(',');
+          _log('ActiveSpeakers: [$ids]');
+        })
+        ..on<RoomReconnectingEvent>((_) {
+          _log('RoomReconnectingEvent — audio will pause');
+        })
+        ..on<RoomReconnectedEvent>((_) async {
+          _log('RoomReconnectedEvent');
+          if (Platform.isIOS) {
+            try {
+              await CallService.restartAudioForCallKit();
+              _log('restartAudio(reconnect) done');
+            } catch (e) { _log('restartAudio(reconnect) ERR: $e'); }
+          }
+          try {
+            await _audioTrack?.restartTrack();
+            _log('restartTrack(reconnect) done');
+          } catch (e) { _log('restartTrack(reconnect) ERR: $e'); }
+        })
+        ..on<ParticipantDisconnectedEvent>((_) {
+          _log('ParticipantDisconnectedEvent');
+          _onRemoteDisconnect();
+        })
+        ..on<RoomDisconnectedEvent>((_) {
+          _log('RoomDisconnectedEvent');
+          _onRemoteDisconnect();
+        });
 
-      // Guard against stale room participants (previous call that didn't clean up).
-      // Only apply joinedAt filter for the CALLER (A): a lingering B from a prior
-      // session has joinedAt before this call started.
-      // For the RECIPIENT (B): the caller (A) always joined before B connects,
-      // so the joinedAt filter would incorrectly reject the legitimate caller.
       final isCaller = widget.token.isNotEmpty;
       final activeRemote = _room.remoteParticipants.values.any(
         (p) => p.audioTrackPublications.isNotEmpty &&
                (!isCaller || p.joinedAt.isAfter(callInitiatedAt)),
       );
+      _log('activeRemote=$activeRemote  remoteCount=${_room.remoteParticipants.length}');
       if (activeRemote && mounted) {
         _ringTimeout?.cancel();
         setState(() => _callState = _CallState.talking);
         _startDurationTimer();
         if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+        if (Platform.isIOS) {
+          _log('restartAudio(activeRemoteImmediate)');
+          CallService.restartAudioForCallKit()
+              .then((_) => _log('restartAudio(4) done'))
+              .catchError((e) { _log('restartAudio(4) ERR: $e'); return null; });
+        }
       } else {
-        // No-answer timeout: 45s no one joins → noAnswer state → auto hang up
         _ringTimeout = Timer(const Duration(seconds: 45), () {
           if (_callState != _CallState.talking && !_disposed && mounted) {
+            _log('ring timeout');
             setState(() => _callState = _CallState.noAnswer);
             Future.delayed(const Duration(seconds: 2), () => _hangup());
           }
         });
       }
     } catch (e) {
-      debugPrint('[LiveKit] connect error: $e');
+      _log('CONNECT ERROR: $e');
       final msg = e.toString().toLowerCase();
       final isPermission = msg.contains('permission') || msg.contains('denied') || msg.contains('microphone');
       if (mounted) {
@@ -273,8 +398,18 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
       onPopInvokedWithResult: (_, __) => _hangup(),
       child: Scaffold(
         backgroundColor: const Color(0xFF1A1A3E),
-        body: SafeArea(
-          child: Column(
+        body: Stack(
+          children: [
+            SafeArea(child: _buildMain()),
+            if (_kDebug) _buildDebugPanel(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMain() {
+    return Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const SizedBox(height: 60),
@@ -361,6 +496,71 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen> {
                   ],
                 ),
               ),
+            ],
+    );
+  }
+
+  Widget _buildDebugPanel() {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: GestureDetector(
+        onTap: () => setState(() => _showDebug = !_showDebug),
+        child: Container(
+          color: Colors.black87,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _showDebug = !_showDebug),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: Text(
+                          'DEBUG [tap] state=$_callState local=${_audioTrack != null ? "ok" : "null"} remote=${_remoteAudioSubscribed ? "sub" : "NO"} muted=$_muted',
+                          style: const TextStyle(color: Colors.yellow, fontSize: 10, fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6)),
+                    onPressed: () async {
+                      _log('MANUAL fix: restartAudio + restartTrack');
+                      try {
+                        await CallService.restartAudioForCallKit();
+                        _log('restartAudio done');
+                      } catch (e) {
+                        _log('restartAudio ERR: $e');
+                      }
+                      try {
+                        await _audioTrack?.restartTrack();
+                        _log('restartTrack done');
+                      } catch (e) {
+                        _log('restartTrack ERR: $e');
+                      }
+                    },
+                    child: const Text('⟳ Audio', style: TextStyle(color: Colors.orangeAccent, fontSize: 11)),
+                  ),
+                ],
+              ),
+              if (_showDebug)
+                Container(
+                  height: 200,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: ListView.builder(
+                    reverse: true,
+                    itemCount: _dbg.length,
+                    itemBuilder: (_, i) => Text(
+                      _dbg[_dbg.length - 1 - i],
+                      style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontFamily: 'monospace'),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

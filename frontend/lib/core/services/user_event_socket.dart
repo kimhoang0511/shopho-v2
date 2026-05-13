@@ -111,6 +111,7 @@ class UserEventSocket {
           livekitUrl: data['livekit_url'] as String? ?? '',
           roomName: data['room_name'] as String? ?? '',
           initiatedAt: data['initiated_at'] as int?,
+          orderNote: data['order_note'] as String? ?? '',
         );
       } else if (type == 'call_cancel') {
         final callId = data['call_id'] as String? ?? '';

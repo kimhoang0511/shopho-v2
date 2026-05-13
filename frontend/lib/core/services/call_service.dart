@@ -118,6 +118,7 @@ class CallService {
     return call;
   }
 
+
   // ── In-memory call-data cache ──────────────────────────────────────────────
   // Populated when showIncomingCall() runs in the main isolate (WS / FCM
   // foreground). Gives _handleEvent a reliable source for orderId etc. when
@@ -174,8 +175,8 @@ class CallService {
     if (Platform.isAndroid) {
       FlutterCallkitIncoming.requestFullIntentPermission();
 
-      // Hướng 2: MethodChannel handler for when MainActivity detects an Accept
-      // intent AFTER Flutter is already running (app was in background).
+      // MethodChannel handler for when MainActivity detects an Accept intent
+      // AFTER Flutter is already running (app was in background).
       _nativeChannel.setMethodCallHandler((call) async {
         if (call.method == 'callAccepted') {
           final callId = call.arguments as String? ?? '';
@@ -186,6 +187,19 @@ class CallService {
       // Poll for accept that arrived during cold start (app was killed).
       // MainActivity stores the callId in SharedPreferences; we read it here
       // once the engine is ready.
+      try {
+        final callId = await _nativeChannel.invokeMethod<String?>('getPendingAcceptCallId');
+        if (callId != null && callId.isNotEmpty) {
+          await _handleNativeAccept(callId);
+          return; // skip redundant _recoverMissedAcceptedCall below
+        }
+      } catch (_) {}
+    }
+
+    // iOS: mirror of Android's SharedPreferences path.
+    // AppDelegate's CXCallObserverDelegate saves the callId to UserDefaults when
+    // the user accepts from CallKit before the Dart EventChannel listener was ready.
+    if (Platform.isIOS) {
       try {
         final callId = await _nativeChannel.invokeMethod<String?>('getPendingAcceptCallId');
         if (callId != null && callId.isNotEmpty) {
@@ -211,16 +225,36 @@ class CallService {
     String livekitUrl = '';
     String orderNote = '';
 
-    // 1. In-memory cache (WS / FCM-foreground path in same isolate).
-    final cached = _inMemoryCallCache[callId];
-    if (cached != null) {
-      orderId = cached['order_id'];
-      if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
-      if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
-      if ((cached['order_note'] ?? '').isNotEmpty) orderNote = cached['order_note']!;
+    // 1. onAccept native snapshot — written synchronously by AppDelegate.onAccept.
+    // Most reliable source: guarantees data at the moment of Accept, before Dart runs.
+    if (callId.isNotEmpty && Platform.isIOS) {
+      try {
+        final full = await _nativeChannel.invokeMethod<Map?>('getPendingCallFull', callId);
+        if (full != null) {
+          orderId = full['order_id']?.toString();
+          final cn = full['caller_name']?.toString();
+          if (cn != null && cn.isNotEmpty) callerName = cn;
+          final lu = full['livekit_url']?.toString();
+          if (lu != null && lu.isNotEmpty) livekitUrl = lu;
+          final on = full['order_note']?.toString();
+          if (on != null && on.isNotEmpty) orderNote = on;
+          debugPrint('[CallService] _handleNativeAccept onAccept snapshot — orderId=$orderId');
+        }
+      } catch (_) {}
     }
 
-    // 2. Persistent storage (killed-app or FCM background isolate).
+    // 2. In-memory cache (WS / FCM-foreground path in same isolate).
+    if (orderId == null || orderId.isEmpty) {
+      final cached = _inMemoryCallCache[callId];
+      if (cached != null) {
+        orderId = cached['order_id'];
+        if ((cached['caller_name'] ?? '').isNotEmpty) callerName = cached['caller_name']!;
+        if ((cached['livekit_url'] ?? '').isNotEmpty) livekitUrl = cached['livekit_url']!;
+        if ((cached['order_note'] ?? '').isNotEmpty) orderNote = cached['order_note']!;
+      }
+    }
+
+    // 3. Persistent storage (killed-app or FCM background isolate).
     if (orderId == null || orderId.isEmpty) {
       final saved = await _loadCallData(callId);
       if (saved != null) {
@@ -229,6 +263,25 @@ class CallService {
         if ((saved['livekit_url'] ?? '').isNotEmpty) livekitUrl = saved['livekit_url']!;
         if ((saved['order_note'] ?? '').isNotEmpty) orderNote = saved['order_note']!;
       }
+    }
+
+    // 4. iOS VoIP push payload saved in UserDefaults by AppDelegate.
+    // VoIP push calls showCallkitIncoming() natively so showIncomingCall() is
+    // never called from Dart — neither cache nor secure storage has the data.
+    if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty && Platform.isIOS) {
+      try {
+        final voip = await _nativeChannel.invokeMethod<Map?>('getVoipCallData', callId);
+        if (voip != null) {
+          orderId = voip['order_id']?.toString();
+          final cn = voip['caller_name']?.toString();
+          if (cn != null && cn.isNotEmpty) callerName = cn;
+          final lu = voip['livekit_url']?.toString();
+          if (lu != null && lu.isNotEmpty) livekitUrl = lu;
+          final on = voip['order_note']?.toString();
+          if (on != null && on.isNotEmpty) orderNote = on;
+          debugPrint('[CallService] iOS VoIP data from UserDefaults — orderId=$orderId');
+        }
+      } catch (_) {}
     }
 
     if (orderId == null || orderId.isEmpty) {
@@ -257,6 +310,23 @@ class CallService {
     };
     _pendingAcceptedCall = callInfo;
     acceptedCallNotifier.value = callInfo;
+  }
+
+  /// Call this on every app resume (iOS). When B accepts from the lock screen
+  /// while the app is backgrounded, the EventChannel event may fire before the
+  /// Dart listener processes it, or extra may be empty for the VoIP push path.
+  /// kPendingAccept (set by CXCallObserverDelegate) is the reliable fallback.
+  static Future<void> checkPendingNativeAccept() async {
+    if (!Platform.isIOS) return;
+    try {
+      final callId = await _nativeChannel.invokeMethod<String?>('getPendingAcceptCallId');
+      if (callId != null && callId.isNotEmpty) {
+        debugPrint('[CallService] checkPendingNativeAccept: found callId=$callId');
+        await _handleNativeAccept(callId);
+      }
+    } catch (e) {
+      debugPrint('[CallService] checkPendingNativeAccept error: $e');
+    }
   }
 
   static Future<void> _recoverMissedAcceptedCall() async {
@@ -332,14 +402,41 @@ class CallService {
       case Event.actionCallAccept:
         _activeCallIds.remove(callId);
         if (_handledAcceptCallIds.contains(callId)) break;
-        _handledAcceptCallIds.add(callId);
+        // Do NOT claim _handledAcceptCallIds yet — claim only after orderId is
+        // confirmed. If we claim here and orderId turns out to be null (e.g.,
+        // VoIP push path where extra is empty), _handleNativeAccept would be
+        // blocked by the dedup check and navigation would never happen.
         final extra = event.body['extra'] as Map?;
-        String? orderId = extra?['order_id'] as String?;
-        String callerName = extra?['caller_name'] as String? ?? 'Người gọi';
-        String livekitUrl = extra?['livekit_url'] as String? ?? '';
-        String orderNote = extra?['order_note'] as String? ?? '';
+        // Use toString() not 'as String?' — platform channel may return NSString
+        // which Dart decodes as a non-String type on some iOS builds.
+        String? orderId = extra?['order_id']?.toString();
+        String callerName = extra?['caller_name']?.toString() ?? 'Người gọi';
+        String livekitUrl = extra?['livekit_url']?.toString() ?? '';
+        String orderNote = extra?['order_note']?.toString() ?? '';
+        debugPrint('[CallService] actionCallAccept callId=$callId orderId=$orderId extra keys=${extra?.keys.toList()}');
 
-        // Fallback 1: in-memory cache (main-isolate WS / FCM-foreground path).
+        // Fallback 1: onAccept native snapshot — written synchronously by
+        // AppDelegate.onAccept before this EventChannel event was processed.
+        // Most reliable source: always set at the exact moment of Accept tap.
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty && Platform.isIOS) {
+          try {
+            final full = await _nativeChannel.invokeMethod<Map?>('getPendingCallFull', callId);
+            if (full != null) {
+              orderId = full['order_id']?.toString();
+              final cn = full['caller_name']?.toString();
+              if (cn != null && cn.isNotEmpty) callerName = cn;
+              final lu = full['livekit_url']?.toString();
+              if (lu != null && lu.isNotEmpty) livekitUrl = lu;
+              final on = full['order_note']?.toString();
+              if (on != null && on.isNotEmpty) orderNote = on;
+              debugPrint('[CallService] actionCallAccept onAccept snapshot — orderId=$orderId');
+            }
+          } catch (e) {
+            debugPrint('[CallService] getPendingCallFull in _handleEvent error: $e');
+          }
+        }
+
+        // Fallback 2: in-memory cache (main-isolate WS / FCM-foreground path).
         if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
           final cached = _inMemoryCallCache[callId];
           if (cached != null) {
@@ -351,7 +448,7 @@ class CallService {
           }
         }
 
-        // Fallback 2: persistent storage (killed-app / FCM background isolate).
+        // Fallback 3: persistent storage (killed-app / FCM background isolate).
         if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty) {
           final saved = await _loadCallData(callId);
           if (saved != null) {
@@ -363,12 +460,34 @@ class CallService {
           }
         }
 
+        // Fallback 4: iOS VoIP push — AppDelegate.pushRegistry saved the full
+        // payload to UserDefaults. Dart's showIncomingCall was never called for
+        // this path, so neither memory cache nor secure storage has the data.
+        if ((orderId == null || orderId.isEmpty) && callId.isNotEmpty && Platform.isIOS) {
+          try {
+            final voip = await _nativeChannel.invokeMethod<Map?>('getVoipCallData', callId);
+            if (voip != null) {
+              orderId = voip['order_id']?.toString();
+              final cn = voip['caller_name']?.toString();
+              if (cn != null && cn.isNotEmpty) callerName = cn;
+              final lu = voip['livekit_url']?.toString();
+              if (lu != null && lu.isNotEmpty) livekitUrl = lu;
+              final on = voip['order_note']?.toString();
+              if (on != null && on.isNotEmpty) orderNote = on;
+              debugPrint('[CallService] actionCallAccept VoIP UserDefaults — orderId=$orderId');
+            }
+          } catch (e) {
+            debugPrint('[CallService] getVoipCallData in _handleEvent error: $e');
+          }
+        }
+
         if (orderId != null && orderId.isNotEmpty) {
+          // Claim only now that we have data. Re-check race condition.
+          if (_handledAcceptCallIds.contains(callId)) break;
+          _handledAcceptCallIds.add(callId);
           _inMemoryCallCache.remove(callId);
           _clearCallData(callId).ignore();
           _prefetchRecipientToken(orderId);
-          // Await mic permission before navigating. On first install the dialog
-          // must be granted first; on subsequent calls this resolves instantly.
           await Permission.microphone.request();
           final callInfo = {
             'orderId': orderId,
@@ -377,10 +496,16 @@ class CallService {
             'callId': callId,
             'orderNote': orderNote,
           };
-          // Lifecycle-based fallback (background / lock-screen accept).
           _pendingAcceptedCall = callInfo;
-          // Immediate signal for foreground case (no lifecycle event fired).
           acceptedCallNotifier.value = callInfo;
+        } else {
+          debugPrint('[CallService] actionCallAccept: orderId still null after all fallbacks');
+          // CXCallObserverDelegate may not have fired yet when this event arrived.
+          // Retry via checkPendingNativeAccept after a short delay — by then
+          // kPendingAccept should be set and the full data sources available.
+          if (Platform.isIOS) {
+            Future.delayed(const Duration(milliseconds: 500), () => checkPendingNativeAccept());
+          }
         }
         break;
 
@@ -564,6 +689,21 @@ class CallService {
       if (foundStale) await FlutterCallkitIncoming.endAllCalls();
     } catch (e) {
       debugPrint('[CallService] _cleanUpStaleCalls error: $e');
+    }
+  }
+
+  /// iOS only. After LiveKit publishes the audio track following a CallKit
+  /// accept, re-send the AVAudioSessionInterruptionNotification(.ended) that
+  /// WebRTC listens for to restart its audio unit. Required because
+  /// CXProvider.didActivate fires before LiveKit initialises, so the original
+  /// signal from flutter_callkit_incoming is missed.
+  static Future<void> restartAudioForCallKit() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _nativeChannel.invokeMethod('restartAudio');
+      debugPrint('[CallService] restartAudioForCallKit: sent');
+    } catch (e) {
+      debugPrint('[CallService] restartAudioForCallKit error: $e');
     }
   }
 

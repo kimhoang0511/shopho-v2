@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
@@ -26,30 +29,30 @@ import 'core/services/fcm_service.dart';
 import 'core/services/user_event_socket.dart';
 import 'core/services/version_check_service.dart';
 import 'features/call/webrtc_call_screen.dart';
+import 'features/orders/data/orders_repository.dart';
 import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   timeago.setLocaleMessages('vi', timeago.ViMessages());
 
-  // Initialize Firebase before runApp so the onMessageOpenedApp listener is
-  // registered before the first frame. On iOS, tapping a background notification
-  // emits the event immediately on resume — if the listener is registered later
-  // (inside _initServices which runs after runApp) the event is already gone.
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  FirebaseMessaging.onBackgroundMessage(fcmBackgroundHandler);
+  // Firebase init + background/foreground listeners must be registered before
+  // runApp. On iOS, onMessageOpenedApp fires immediately on app resume — if the
+  // listener is not yet registered the event is lost forever.
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    FirebaseMessaging.onBackgroundMessage(fcmBackgroundHandler);
 
-  // Background tap: app was suspended, user tapped notification → app resumes.
-  FirebaseMessaging.onMessageOpenedApp.listen((message) {
-    final orderId = message.data['order_id'] as String?;
-    if (orderId != null && orderId.isNotEmpty) {
-      _router.go('/orders/$orderId');
-    }
-  });
-
-  // Cold-start tap: app was killed, user tapped notification → app launched.
-  final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-  final launchOrderId = initialMessage?.data['order_id'] as String?;
+    // Background tap: app was suspended, user tapped notification → app resumes.
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      final orderId = message.data['order_id'] as String?;
+      if (orderId != null && orderId.isNotEmpty) {
+        FcmService.pendingOrderTapNotifier.value = orderId;
+      }
+    });
+  } catch (e) {
+    debugPrint('[main] Firebase init error: $e');
+  }
 
   // Pre-read auth token so GoRouter redirect is synchronous — avoids white screen
   // on iOS where async Keychain reads delay first frame render.
@@ -58,14 +61,21 @@ void main() async {
         await const FlutterSecureStorage().read(key: 'access_token');
   } catch (_) {}
 
-  runApp(const ProviderScope(child: ShopHoApp()));
+  // runApp MUST be called before getInitialMessage(). On iOS, getInitialMessage()
+  // waits for the APNs/FCM service to be ready which can take several seconds —
+  // awaiting it before runApp causes a blank white screen.
+  runApp(UncontrolledProviderScope(container: _container, child: const ShopHoApp()));
 
-  // Navigate to order from cold-start notification tap (must be after runApp)
-  if (launchOrderId != null && launchOrderId.isNotEmpty) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _router.go('/orders/$launchOrderId');
-    });
-  }
+  // Cold-start tap: app was killed, user tapped notification → app launched.
+  // Resolved asynchronously after runApp so it never blocks the first frame.
+  FirebaseMessaging.instance.getInitialMessage().then((msg) {
+    final orderId = msg?.data['order_id'] as String?;
+    if (orderId != null && orderId.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        FcmService.pendingOrderTapNotifier.value = orderId;
+      });
+    }
+  }).ignore();
 
   // FCM requestPermission on iOS shows a system dialog — must run after runApp.
   _initServices();
@@ -113,7 +123,6 @@ Future<void> _initServices() async {
   try {
     await FcmService.init(
       DefaultFirebaseOptions.currentPlatform,
-      onNavigateToOrder: (orderId) => _router.go('/orders/$orderId'),
     ).timeout(const Duration(seconds: 15));
   } catch (e) {
     debugPrint('[main] FcmService.init: $e');
@@ -122,18 +131,17 @@ Future<void> _initServices() async {
   // Re-register FCM/VoIP tokens on every cold start — handles stale tokens
   // that accumulate when Firebase rotates them while the app is killed.
   // Only runs if the user is already authenticated (no re-login needed).
+  // Use apiBaseUrl constant directly — api_base_url in secure storage may be
+  // absent on first cold start after install (written only after first login).
   if (existingToken != null) {
     try {
-      const storage = FlutterSecureStorage();
-      final base = await storage.read(key: 'api_base_url');
-      if (base != null) {
-        final dio = Dio(BaseOptions(
-          baseUrl: base,
-          headers: {'Authorization': 'Bearer $existingToken'},
-          connectTimeout: const Duration(seconds: 8),
-        ));
-        await FcmService.registerToken(dio);
-      }
+      final dio = Dio(BaseOptions(
+        baseUrl: apiBaseUrl,
+        headers: {'Authorization': 'Bearer $existingToken'},
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 30),
+      ));
+      await FcmService.registerToken(dio);
     } catch (e) {
       debugPrint('[main] token re-registration error: $e');
     }
@@ -142,6 +150,18 @@ Future<void> _initServices() async {
 }
 
 final _navKey = GlobalKey<NavigatorState>();
+
+/// Global container so non-widget code (notification handlers) can invalidate
+/// Riverpod providers (e.g. force-refresh order data on notification tap).
+final _container = ProviderContainer();
+
+/// Navigate to an order detail screen AND signal all live order providers to
+/// re-fetch. This ensures data is always fresh after a push notification tap,
+/// even if the user is already on the same screen.
+void _navigateToOrder(String orderId) {
+  _router.go('/orders/$orderId');
+  _container.read(ordersRefreshProvider.notifier).state++;
+}
 
 // GoRouter uses refreshListenable to re-run redirect synchronously whenever
 // authTokenNotifier changes — no async reads, no blank screen.
@@ -202,13 +222,19 @@ class ShopHoApp extends StatefulWidget {
 }
 
 class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
+  static const _notifTapChannel = MethodChannel('shopho/notif_tap');
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     CallService.acceptedCallNotifier.addListener(_navigatePendingCall);
+    FcmService.pendingOrderTapNotifier.addListener(_onPendingOrderTap);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _navigatePendingCall();
+      // iOS: check for a notification tap that arrived before the engine was ready
+      // (cold-start from killed state — AppDelegate.didReceive saved to UserDefaults).
+      if (Platform.isIOS) _checkPendingNotifTap();
       final ctx = _navKey.currentContext;
       if (ctx != null) await VersionCheckService.check(ctx);
     });
@@ -218,6 +244,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     CallService.acceptedCallNotifier.removeListener(_navigatePendingCall);
+    FcmService.pendingOrderTapNotifier.removeListener(_onPendingOrderTap);
     super.dispose();
   }
 
@@ -226,11 +253,47 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // Background/lock-screen accept: navigate once the app fully resumes.
       _navigatePendingCall();
+      if (Platform.isIOS) {
+        // iOS: Event.actionCallAccept can fire up to ~600 ms after the app
+        // resumes — the first call above finds nothing, so retry once.
+        Future.delayed(const Duration(milliseconds: 700), _navigatePendingCall);
+        // iOS: check kPendingAccept (set by CXCallObserverDelegate when B
+        // accepts from the lock screen). Handles the case where the EventChannel
+        // event fired before the Dart listener was ready, or extra was empty
+        // for the VoIP push path.
+        CallService.checkPendingNativeAccept();
+        // Retry checkPendingNativeAccept once — CXCallObserverDelegate can fire
+        // up to ~600 ms after resume, mirroring the _navigatePendingCall retry.
+        Future.delayed(const Duration(milliseconds: 700), CallService.checkPendingNativeAccept);
+        // iOS: background→foreground notification tap.
+        _checkPendingNotifTap();
+      }
       // Reconnect WebSocket in case Android killed it while screen was off.
       if (authTokenNotifier.value != null) {
         UserEventSocket.connect(_wsTokenProvider).ignore();
       }
     }
+  }
+
+  // Triggered whenever FcmService.pendingOrderTapNotifier gets a non-null orderId.
+  void _onPendingOrderTap() {
+    final orderId = FcmService.pendingOrderTapNotifier.value;
+    if (orderId == null || orderId.isEmpty) return;
+    FcmService.pendingOrderTapNotifier.value = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigateToOrder(orderId);
+    });
+  }
+
+  // Reads the order_id saved by AppDelegate.didReceive and feeds it to the notifier.
+  // Handles both cold-start and background→foreground notification taps on iOS.
+  void _checkPendingNotifTap() async {
+    try {
+      final orderId = await _notifTapChannel.invokeMethod<String?>('getPendingOrderTap');
+      if (orderId != null && orderId.isNotEmpty) {
+        FcmService.pendingOrderTapNotifier.value = orderId;
+      }
+    } catch (_) {}
   }
 
   void _navigatePendingCall() {

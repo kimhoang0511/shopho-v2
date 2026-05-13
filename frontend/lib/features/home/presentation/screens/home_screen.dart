@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/services/call_service.dart';
+import '../../../../core/services/fcm_service.dart';
 import '../../../../core/widgets/contact_footer.dart';
 
 const _kTopupWebUrl = 'https://web-shopho-production.up.railway.app';
@@ -25,22 +30,69 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
+
+  // ── Debug log ──────────────────────────────────────────────
+  final List<String> _dbg = [];
+  bool _showDebug = false;
+
+  void _dlog(String msg) {
+    final ts = DateTime.now();
+    final s = '[${ts.hour.toString().padLeft(2,'0')}:'
+        '${ts.minute.toString().padLeft(2,'0')}:'
+        '${ts.second.toString().padLeft(2,'0')}.'
+        '${(ts.millisecond ~/ 10).toString().padLeft(2,'0')}] $msg';
+    debugPrint('[HomeDebug] $s');
+    if (mounted) setState(() { _dbg.add(s); if (_dbg.length > 60) _dbg.removeAt(0); });
+  }
+
+  void _onAcceptedCallChanged() {
+    final v = CallService.acceptedCallNotifier.value;
+    _dlog('acceptedCallNotifier → orderId=${v?['orderId']} callId=${v?['callId']}');
+  }
+
+  void _onPendingOrderTapChanged() {
+    final v = FcmService.pendingOrderTapNotifier.value;
+    _dlog('pendingOrderTap → $v');
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    CallService.acceptedCallNotifier.addListener(_onAcceptedCallChanged);
+    FcmService.pendingOrderTapNotifier.addListener(_onPendingOrderTapChanged);
+    _dlog('HomeScreen initState  lifecycle=${WidgetsBinding.instance.lifecycleState}');
+    if (Platform.isIOS) _checkPendingNative();
+  }
+
+  Future<void> _checkPendingNative() async {
+    try {
+      const ch = MethodChannel('shopho/call_native');
+      final callId = await ch.invokeMethod<String?>('getPendingAcceptCallId');
+      _dlog('getPendingAcceptCallId → $callId');
+      if (callId != null) {
+        final full = await ch.invokeMethod<Map?>('getPendingCallFull', callId);
+        _dlog('getPendingCallFull($callId) → ${full?.keys.toList()}  orderId=${full?['order_id']}');
+      }
+    } catch (e) {
+      _dlog('checkPendingNative error: $e');
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    CallService.acceptedCallNotifier.removeListener(_onAcceptedCallChanged);
+    FcmService.pendingOrderTapNotifier.removeListener(_onPendingOrderTapChanged);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _dlog('lifecycle → $state');
     if (state == AppLifecycleState.resumed) {
       ref.invalidate(_meProvider);
+      if (Platform.isIOS) _checkPendingNative();
     }
   }
 
@@ -78,73 +130,144 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       appBar: AppBar(
         title: const Text('Kinme', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          // Debug button — tap to toggle log overlay
+          IconButton(
+            icon: Badge(
+              label: Text('${_dbg.length}', style: const TextStyle(fontSize: 9)),
+              isLabelVisible: _dbg.isNotEmpty,
+              child: const Icon(Icons.bug_report_outlined, size: 20),
+            ),
+            onPressed: () => setState(() => _showDebug = !_showDebug),
+            tooltip: 'Debug log',
+          ),
           IconButton(
             icon: const Icon(Icons.person_outline),
             onPressed: () => _navigate('/profile'),
           ),
         ],
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── App intro ────────────────────────────────────
-              const _AppIntro(),
-              const SizedBox(height: 20),
-
-              // ── Slot balance card ─────────────────────────────
-              _SlotBalanceCard(slots: orderSlots, onTopup: _openTopup),
-              const SizedBox(height: 20),
-
-              // ── Action cards ─────────────────────────────────
-              Text('Bạn muốn làm gì?', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              Row(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: _ActionCard(
-                      icon: Icons.search_rounded,
-                      bgIcon: Icons.local_shipping_rounded,
-                      label: 'Tìm đơn mua/ship hộ',
-                      subtitle: 'Tiếp nhận đơn & nhận thù lao',
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF5B6AF0), Color(0xFF3B4DD8)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                  const _AppIntro(),
+                  const SizedBox(height: 20),
+                  _SlotBalanceCard(slots: orderSlots, onTopup: _openTopup),
+                  const SizedBox(height: 20),
+                  Text('Bạn muốn làm gì?', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ActionCard(
+                          icon: Icons.search_rounded,
+                          bgIcon: Icons.local_shipping_rounded,
+                          label: 'Tìm đơn mua/ship hộ',
+                          subtitle: 'Tiếp nhận đơn & nhận thù lao',
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF5B6AF0), Color(0xFF3B4DD8)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          shadowColor: const Color(0xFF5B6AF0),
+                          onTap: () => _navigate('/orders/browse'),
+                        ),
                       ),
-                      shadowColor: const Color(0xFF5B6AF0),
-                      onTap: () => _navigate('/orders/browse'),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _ActionCard(
-                      icon: Icons.receipt_long_rounded,
-                      bgIcon: Icons.inventory_2_rounded,
-                      label: 'Tạo đơn - cần người mua/ship hộ giúp',
-                      subtitle: 'Quản lý đơn đã tạo',
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFF5A623), Color(0xFFD4861A)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _ActionCard(
+                          icon: Icons.receipt_long_rounded,
+                          bgIcon: Icons.inventory_2_rounded,
+                          label: 'Tạo đơn - cần người mua/ship hộ giúp',
+                          subtitle: 'Quản lý đơn đã tạo',
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFF5A623), Color(0xFFD4861A)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          shadowColor: const Color(0xFFF5A623),
+                          onTap: () => _navigate('/orders/my-created'),
+                        ),
                       ),
-                      shadowColor: const Color(0xFFF5A623),
-                      onTap: () => _navigate('/orders/my-created'),
-                    ),
+                    ],
                   ),
+                  const SizedBox(height: 32),
+                  const ContactFooter(),
+                  const SizedBox(height: 16),
                 ],
               ),
-
-              const SizedBox(height: 32),
-
-              // ── Contact footer ────────────────────────────────
-              const ContactFooter(),
-              const SizedBox(height: 16),
-            ],
+            ),
           ),
-        ),
+
+          // ── Debug overlay ──────────────────────────────────
+          if (_showDebug)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.92),
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(left: 12),
+                              child: Text('DEBUG LOG', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 13)),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy, color: Colors.white54, size: 18),
+                            tooltip: 'Copy log',
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: _dbg.join('\n')));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Log copied'), duration: Duration(seconds: 1)),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
+                            tooltip: 'Clear',
+                            onPressed: () => setState(() => _dbg.clear()),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white54),
+                            onPressed: () => setState(() => _showDebug = false),
+                          ),
+                        ],
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          reverse: true,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          itemCount: _dbg.length,
+                          itemBuilder: (_, i) {
+                            final line = _dbg[_dbg.length - 1 - i];
+                            final isError = line.contains('error') || line.contains('ERROR') || line.contains('FAILED');
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                line,
+                                style: TextStyle(
+                                  color: isError ? Colors.redAccent : Colors.greenAccent,
+                                  fontSize: 10,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

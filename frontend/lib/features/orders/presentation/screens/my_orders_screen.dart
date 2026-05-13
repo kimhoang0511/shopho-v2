@@ -13,10 +13,12 @@ final _profileProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) 
 });
 
 final _myCreatedProvider = FutureProvider.autoDispose<List<OrderDetail>>((ref) {
+  ref.watch(ordersRefreshProvider);
   return ref.read(ordersRepositoryProvider).myCreatedOrders();
 });
 
 final _myShippedProvider = FutureProvider.autoDispose<List<OrderDetail>>((ref) {
+  ref.watch(ordersRefreshProvider);
   return ref.read(ordersRepositoryProvider).myShippedOrders();
 });
 

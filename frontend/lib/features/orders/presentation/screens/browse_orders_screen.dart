@@ -209,6 +209,7 @@ final _aptListProvider = FutureProvider.autoDispose<List<_AptInfo>>((ref) async 
 
 final pendingOrdersProvider = FutureProvider.autoDispose
     .family<List<OrderListItem>, OrderFilter>((ref, filter) {
+  ref.watch(ordersRefreshProvider);
   return ref.read(ordersRepositoryProvider).fetchPendingOrders(
     apartmentIds: filter.apartmentIds,
     buildingKeys: filter.buildingKeys,

@@ -1,7 +1,11 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
@@ -79,6 +83,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           return token;
         }
       }));
+      if (defaultTargetPlatform == TargetPlatform.iOS && mounted) {
+        await _showFcmTokenDialog();
+      }
       authTokenNotifier.value = token; // triggers GoRouter redirect → /home
     } on DioException catch (e) {
       final msg = extractApiError(e, 'Đăng nhập thất bại');
@@ -90,6 +97,105 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _showFcmTokenDialog() async {
+    // Chờ APNs token tối đa 15 giây trước khi lấy FCM token
+    String? apnsRaw;
+    for (int i = 0; i < 15; i++) {
+      apnsRaw = await FirebaseMessaging.instance.getAPNSToken();
+      if (apnsRaw != null) break;
+      await Future.delayed(const Duration(seconds: 1));
+    }
+
+    // FCM token
+    String fcmToken;
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken()
+          .timeout(const Duration(seconds: 10)) ?? '❌ null';
+    } catch (e) {
+      fcmToken = '❌ Error: $e';
+    }
+
+    // Permission status
+    String permission;
+    try {
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      final status = settings.authorizationStatus;
+      permission = switch (status) {
+        AuthorizationStatus.authorized   => '✅ authorized',
+        AuthorizationStatus.provisional  => '⚠️ provisional',
+        AuthorizationStatus.denied       => '❌ denied',
+        AuthorizationStatus.notDetermined => '⚠️ notDetermined',
+        _ => '❓ unknown',
+      };
+    } catch (e) {
+      permission = '❌ Error: $e';
+    }
+
+    // APNs token (đã chờ ở trên)
+    final apnsToken = apnsRaw != null
+        ? '✅ ${apnsRaw.substring(0, 20)}…'
+        : '❌ null — kiểm tra provisioning profile & rebuild';
+
+    // VoIP token — retry up to 10s (PushKit token is async)
+    String voipToken;
+    try {
+      String? rawVoip;
+      for (int i = 0; i < 5; i++) {
+        final t = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
+        if (t != null && t.toString().isNotEmpty) { rawVoip = t.toString(); break; }
+        await Future.delayed(const Duration(seconds: 2));
+      }
+      voipToken = rawVoip != null ? '✅ ${rawVoip.substring(0, 20)}…' : '❌ null (PushKit chưa cấp)';
+    } catch (e) {
+      voipToken = '❌ Error: $e';
+    }
+
+    final report = '''
+📱 Quyền thông báo: $permission
+
+🔑 APNs Token:
+${apnsToken.length > 40 ? '✅ ${apnsToken.substring(0, 30)}…' : apnsToken}
+
+📲 FCM Token:
+${fcmToken.startsWith('❌') ? fcmToken : '✅ ${fcmToken.substring(0, 20)}…'}
+
+📞 VoIP Token: $voipToken
+''';
+
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('FCM Debug Info'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(report, style: const TextStyle(fontSize: 13)),
+              const Divider(),
+              const Text('FCM Token đầy đủ:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 4),
+              SelectableText(fcmToken, style: const TextStyle(fontSize: 11, color: Colors.blue)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: fcmToken));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Đã copy FCM token!')),
+              );
+            },
+            child: const Text('Copy Token'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng')),
+        ],
+      ),
+    );
   }
 
   @override
@@ -104,10 +210,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.local_shipping_rounded, size: 72, color: Color(0xFF5B6AF0)),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Image.asset('logo.png', height: 140),
+                  ),
                   const SizedBox(height: 8),
-                  const Text('ShopHo', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                  const Text('Ship hộ trong khu căn hộ', style: TextStyle(color: Colors.grey)),
+                
+                  const Text('Mua/ship hộ và cần giúp đỡ trong khu căn hộ', style: TextStyle(color: Colors.grey)),
                   const SizedBox(height: 40),
 
                   TextFormField(

@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -13,6 +15,7 @@ import 'call_service.dart';
 
 const _channelId = 'shopho_orders';
 const _channelName = 'Đơn hàng';
+const _notifTapChannel = MethodChannel('shopho/notif_tap');
 
 final _localNotif = FlutterLocalNotificationsPlugin();
 
@@ -46,23 +49,13 @@ Future<void> fcmBackgroundHandler(RemoteMessage message) async {
 }
 
 class FcmService {
-  static void Function(String orderId)? _navigate;
-  static String? _pendingOrderId;
+  /// Set a non-null orderId to trigger navigation to that order.
+  /// Listeners should consume the value and reset it to null.
+  static final pendingOrderTapNotifier = ValueNotifier<String?>(null);
+
   static StreamSubscription<String>? _tokenRefreshSub;
 
-  /// If the app was launched by tapping a notification while terminated,
-  /// returns the order ID to navigate to (and clears it).
-  static String? consumePendingNavigation() {
-    final id = _pendingOrderId;
-    _pendingOrderId = null;
-    return id;
-  }
-
-  static Future<void> init(
-    FirebaseOptions options, {
-    required void Function(String orderId) onNavigateToOrder,
-  }) async {
-    _navigate = onNavigateToOrder;
+  static Future<void> init(FirebaseOptions options) async {
 
     // Firebase.initializeApp() and onBackgroundMessage() are called in main()
     // before runApp() so the onMessageOpenedApp listener is ready on iOS before
@@ -92,18 +85,41 @@ class FcmService {
       onDidReceiveNotificationResponse: (details) {
         final orderId = details.payload;
         if (orderId != null && orderId.isNotEmpty) {
-          _navigate?.call(orderId);
+          pendingOrderTapNotifier.value = orderId;
         }
       },
     );
 
-    // iOS: don't show FCM native banner in foreground — onMessage shows a local
-    // notification with an orderId payload for reliable tap navigation.
+    // iOS: suppress Firebase's own foreground banner — AppDelegate.willPresent
+    // returns [.banner, .sound, .badge] so the native system banner is shown
+    // instead, and didReceive handles tap navigation via MethodChannel.
     await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
       alert: false,
       badge: true,
       sound: false,
     );
+
+    // iOS: AppDelegate.didReceive invokes "onTap" when the user taps a notification
+    // while the app is in foreground or resuming from background.
+    if (Platform.isIOS) {
+      _notifTapChannel.setMethodCallHandler((call) async {
+        if (call.method == 'onTap') {
+          final orderId = call.arguments as String?;
+          if (orderId != null && orderId.isNotEmpty) {
+            pendingOrderTapNotifier.value = orderId;
+          }
+        }
+      });
+      // Cold-start: AppDelegate saved the order_id to UserDefaults before the
+      // channel was ready. Read it now — _ShopHoAppState may already have read
+      // and cleared it, in which case we get null and do nothing.
+      try {
+        final orderId = await _notifTapChannel.invokeMethod<String?>('getPendingOrderTap');
+        if (orderId != null && orderId.isNotEmpty) {
+          pendingOrderTapNotifier.value = orderId;
+        }
+      } catch (_) {}
+    }
 
     // Show notification when app is in foreground
     FirebaseMessaging.onMessage.listen((message) {
@@ -139,9 +155,10 @@ class FcmService {
         CallService.showMissedCallNotification(callerName: callerName, orderId: orderId, callId: callId);
         return;
       }
-      // On iOS, message.notification can be null even for notification messages
-      // (Firebase delivers data separately from the notification payload).
-      // Fall back to data fields so foreground notifications always appear.
+      // Show a local notification so onDidReceiveNotificationResponse handles the tap.
+      // On iOS the native FCM banner is suppressed by AppDelegate.willPresent (it
+      // returns [.badge] for gcm.message_id messages), so there is no duplicate.
+      // On Android this is the standard foreground notification path.
       final notification = message.notification;
       final title = notification?.title ?? message.data['title'] as String?;
       final body  = notification?.body  ?? message.data['body']  as String?;
@@ -157,11 +174,6 @@ class FcmService {
             _channelName,
             importance: Importance.high,
             priority: Priority.high,
-          ),
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
           ),
         ),
         payload: orderId,
@@ -219,8 +231,9 @@ class FcmService {
     await _registerFcmToken(dio);
 
     // VoIP token — iOS only (PushKit). Guarantees waking app when killed.
+    // Must be awaited so callers (cold-start re-registration) know it completed.
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      _registerVoipToken(dio);
+      await _registerVoipToken(dio);
     }
   }
 
@@ -285,30 +298,52 @@ class FcmService {
     }
   }
 
+  static const _nativeCallChannel = MethodChannel('shopho/call_native');
+
   static Future<void> _registerVoipToken(Dio dio) async {
     try {
+      debugPrint('[FCM] _registerVoipToken: starting…');
+      // Primary: flutter_callkit_incoming plugin (set by AppDelegate.didUpdate).
       // PushKit token is delivered asynchronously — retry up to 10s.
       String? voipToken;
       for (int i = 0; i < 5; i++) {
         final t = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
+        debugPrint('[FCM] getDevicePushTokenVoIP attempt ${i + 1}: ${t == null ? "null" : t.toString().substring(0, 10) + "…"}');
         if (t != null && t.toString().isNotEmpty) {
           voipToken = t.toString();
           break;
         }
-        debugPrint('[FCM] VoIP token null — retry ${i + 1}/5…');
         await Future.delayed(const Duration(seconds: 2));
       }
-      if (voipToken == null) {
-        debugPrint('[FCM] VoIP token not available after retries');
+
+      // Fallback: AppDelegate.didUpdate saves the raw token to UserDefaults before
+      // the Flutter engine initialises. If the plugin path above still returns null
+      // (engine init race), read the token from native UserDefaults directly.
+      if (voipToken == null || voipToken.isEmpty) {
+        debugPrint('[FCM] VoIP token not available from plugin — trying UserDefaults fallback…');
+        try {
+          final stored = await _nativeCallChannel.invokeMethod<String?>('getStoredVoipToken');
+          debugPrint('[FCM] UserDefaults fallback: ${stored == null ? "null" : stored.substring(0, 10) + "…"}');
+          if (stored != null && stored.isNotEmpty) {
+            voipToken = stored;
+          }
+        } catch (e) {
+          debugPrint('[FCM] getStoredVoipToken error: $e');
+        }
+      }
+
+      if (voipToken == null || voipToken.isEmpty) {
+        debugPrint('[FCM] VoIP token not available after all retries — skipping registration');
         return;
       }
+      debugPrint('[FCM] posting VoIP token to backend: ${voipToken.substring(0, 10)}…');
       await dio.post(
         '/users/me/device-token',
         data: {'token': voipToken, 'platform': 'ios_voip'},
       );
-      debugPrint('[FCM] VoIP token registered');
-    } catch (e) {
-      debugPrint('[FCM] VoIP token registration error: $e');
+      debugPrint('[FCM] VoIP token registered OK: ${voipToken.substring(0, 10)}…');
+    } catch (e, st) {
+      debugPrint('[FCM] VoIP token registration error: $e\n$st');
     }
   }
 
