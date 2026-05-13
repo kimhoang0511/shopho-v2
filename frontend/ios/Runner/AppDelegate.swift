@@ -282,16 +282,12 @@ import flutter_callkit_incoming
   ) {
     super.userNotificationCenter(center, willPresent: notification, withCompletionHandler: { _ in })
     let userInfo = notification.request.content.userInfo
-    // FCM messages carry gcm.message_id. Suppress the native banner so Dart can
-    // show a flutter_local_notifications banner instead — that path fires
-    // onDidReceiveNotificationResponse reliably for tap navigation on all iOS versions.
-    if userInfo["gcm.message_id"] != nil {
-      completionHandler([.badge])
-    } else {
-      // flutter_local_notifications or other local notifications — show normally,
-      // including .list so they also appear in the notification centre.
-      completionHandler([.banner, .sound, .badge, .list])
-    }
+    // Show ALL notifications in the foreground — both FCM and local.
+    // For FCM messages this replaces the previous suppression approach (which
+    // relied on flutter_local_notifications re-showing the notification, but that
+    // was unreliable on iOS). Tap handling is done in didReceive below via
+    // notifTapChannel, which works for both foreground and background taps.
+    completionHandler([.banner, .sound, .badge, .list])
   }
 
   override func userNotificationCenter(

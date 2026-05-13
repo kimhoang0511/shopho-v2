@@ -90,13 +90,15 @@ class FcmService {
       },
     );
 
-    // iOS: suppress Firebase's own foreground banner — AppDelegate.willPresent
-    // returns [.banner, .sound, .badge] so the native system banner is shown
-    // instead, and didReceive handles tap navigation via MethodChannel.
+    // iOS: let Firebase show the foreground banner natively — AppDelegate.willPresent
+    // returns [.banner, .sound, .badge, .list] so notifications appear when the app
+    // is in the foreground. Tap handling is done in AppDelegate.didReceive via
+    // the notifTapChannel MethodChannel.
+    // On Android, this setting has no effect (foreground handling is done in onMessage).
     await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-      alert: false,
+      alert: true,
       badge: true,
-      sound: false,
+      sound: true,
     );
 
     // iOS: AppDelegate.didReceive invokes "onTap" when the user taps a notification
@@ -155,10 +157,12 @@ class FcmService {
         CallService.showMissedCallNotification(callerName: callerName, orderId: orderId, callId: callId);
         return;
       }
-      // Show a local notification so onDidReceiveNotificationResponse handles the tap.
-      // On iOS the native FCM banner is suppressed by AppDelegate.willPresent (it
-      // returns [.badge] for gcm.message_id messages), so there is no duplicate.
-      // On Android this is the standard foreground notification path.
+      // On iOS the FCM SDK shows the notification banner natively (we enabled
+      // setForegroundNotificationPresentationOptions alert:true above), so we
+      // must NOT call _localNotif.show() — that would create a duplicate banner.
+      // Tap handling on iOS is done by AppDelegate.didReceive via notifTapChannel.
+      // On Android, _localNotif.show() is the standard foreground notification path.
+      if (Platform.isIOS) return;
       final notification = message.notification;
       final title = notification?.title ?? message.data['title'] as String?;
       final body  = notification?.body  ?? message.data['body']  as String?;
