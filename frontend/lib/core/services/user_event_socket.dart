@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../api/api_client.dart';
@@ -117,6 +118,9 @@ class UserEventSocket {
         final callId = data['call_id'] as String? ?? '';
         debugPrint('[UserEventSocket] call_cancel via socket: $callId');
         if (callId.isNotEmpty) {
+          // End CallKit ringing UI on iOS — without this CallKit keeps ringing
+          // because it doesn't know the call was cancelled.
+          FlutterCallkitIncoming.endCall(callId);
           callCancelNotifier.value = callId;
         }
       } else if (type == 'missed_call') {
