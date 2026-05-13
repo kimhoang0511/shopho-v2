@@ -279,6 +279,16 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
         });
       }
 
+      // Report connected to backend so A can detect B's state.
+      if (widget.callId.isNotEmpty && widget.token.isEmpty) {
+        try {
+          await ref.read(apiClientProvider).dio.post('/calls/${widget.callId}/connected');
+          _log('backend(bg): reported connected');
+        } catch (e) {
+          _log('backend(bg): connected report failed: $e');
+        }
+      }
+
       _log('background: setup complete, waiting for remote');
     } catch (e) {
       _log('_useExistingConnection FAILED: $e');
@@ -338,7 +348,6 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
     }
 
     // Phase 2: connect to LiveKit room AND initialize audio track in parallel.
-    final callInitiatedAt = DateTime.now();
     try {
       _log('connecting to room…');
       final connectFuture = _room.connect(
@@ -359,6 +368,17 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
       _log('audio track created');
       await _room.localParticipant?.publishAudioTrack(_audioTrack!);
       _log('audio track published  lifecycle=${WidgetsBinding.instance.lifecycleState}');
+
+      // Report connected to backend so A can detect B's state via polling.
+      // Only recipient (token.isEmpty) needs to report — caller detects via backend.
+      if (widget.callId.isNotEmpty && widget.token.isEmpty) {
+        try {
+          await ref.read(apiClientProvider).dio.post('/calls/${widget.callId}/connected');
+          _log('backend: reported connected');
+        } catch (e) {
+          _log('backend: connected report failed: $e');
+        }
+      }
 
       if (Platform.isIOS && widget.callId.isNotEmpty && widget.token.isEmpty) {
         _log('iOS recipient: setCallConnected + restartAudio');
@@ -462,11 +482,13 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
         });
 
       final isCaller = widget.token.isNotEmpty;
-      final activeRemote = _room.remoteParticipants.values.any(
-        (p) => p.audioTrackPublications.isNotEmpty &&
-               (!isCaller || p.joinedAt.isAfter(callInitiatedAt)),
+      // For recipients: any remote = caller (caller joins first).
+      // For callers: DO NOT trust LiveKit local state immediately — stale participants
+      // from previous calls may be in the room. The backend poll timer will handle detection.
+      final activeRemote = !isCaller && _room.remoteParticipants.values.any(
+        (p) => p.audioTrackPublications.isNotEmpty,
       );
-      _log('activeRemote=$activeRemote  remoteCount=${_room.remoteParticipants.length}');
+      _log('activeRemote=$activeRemote  remoteCount=${_room.remoteParticipants.length} isCaller=$isCaller');
       if (activeRemote && mounted) {
         _remoteEverConnected = true;
         _ringTimeout?.cancel();
@@ -489,26 +511,25 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
         });
 
         // Fallback: poll for remote participants every 1s.
-        // LiveKit events may not fire reliably when remote connects from background.
-        // IMPORTANT: must check joinedAt > callInitiatedAt to avoid false-positive
-        // from stale participants left over from a previous call on the same order.
-        _remotePollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        // Uses TWO sources of truth:
+        //   1. LiveKit local events (fast, but unreliable when app is backgrounded)
+        //   2. Backend ground truth (GET /calls/{callId}/status - reliable, server-side)
+        // For callers (isCaller), we primarily use the backend to avoid false-positives
+        // from stale LiveKit participants. Recipients use LiveKit directly (caller joins first).
+        _remotePollTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
           if (_disposed || !mounted || _callState == _CallState.talking) {
             _remotePollTimer?.cancel();
             return;
           }
           final remotes = _room.remoteParticipants;
-          // For callers: only consider participants who joined AFTER this call started.
-          // Recipients always see the caller (who joined first), so no filter needed.
-          final isNewRemote = remotes.values.any((p) {
-            if (!isCaller) return true; // recipient: any remote is the caller
-            return p.joinedAt.isAfter(callInitiatedAt);
-          });
-          if (remotes.isNotEmpty && isNewRemote) {
+
+          // For recipients: LiveKit local check is sufficient - the caller always
+          // joins the room first, so any remote = the caller.
+          if (!isCaller && remotes.isNotEmpty) {
             _remotePollTimer?.cancel();
             _remoteEverConnected = true;
             _ringTimeout?.cancel();
-            _log('remotePoll: found ${remotes.length} remote(s) isNewRemote=true → talking');
+            _log('remotePoll(recipient): found remote -> talking');
             setState(() => _callState = _CallState.talking);
             _startDurationTimer();
             if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
@@ -516,6 +537,40 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
               CallService.restartAudioForCallKit()
                   .then((_) => _log('restartAudio(poll) done'))
                   .catchError((e) { _log('restartAudio(poll) ERR: $e'); return null; });
+            }
+            return;
+          }
+
+          // For callers: check backend ground truth every 2s to avoid
+          // false-positives from stale LiveKit participants.
+          // (Throttle: only check every other tick = ~2s)
+          if (isCaller && widget.callId.isNotEmpty && _elapsed.inSeconds % 2 == 0) {
+            try {
+              final dio = ref.read(apiClientProvider).dio;
+              final res = await dio.get('/calls/${widget.callId}/status');
+              final connected = res.data['connected'] == true;
+              final cancelled = res.data['cancelled'] == true;
+              if (cancelled) {
+                _log('remotePoll(caller): backend says CANCELLED');
+                _remotePollTimer?.cancel();
+                return;
+              }
+              if (connected && mounted && _callState != _CallState.talking) {
+                _remotePollTimer?.cancel();
+                _remoteEverConnected = true;
+                _ringTimeout?.cancel();
+                _log('remotePoll(caller): backend says CONNECTED -> talking');
+                setState(() => _callState = _CallState.talking);
+                _startDurationTimer();
+                if (widget.callId.isNotEmpty) CallService.markCallConnected(widget.callId);
+                if (Platform.isIOS) {
+                  CallService.restartAudioForCallKit()
+                      .then((_) => _log('restartAudio(poll) done'))
+                      .catchError((e) { _log('restartAudio(poll) ERR: $e'); return null; });
+                }
+              }
+            } catch (e) {
+              _log('remotePoll(caller): backend check failed: $e');
             }
           }
         });

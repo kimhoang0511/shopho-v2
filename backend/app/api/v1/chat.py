@@ -285,11 +285,28 @@ async def call_status(
     call_id: str,
     user: User = Depends(current_user),
 ):
-    """Check if a call has been cancelled. Used by B after accepting from lock
-    screen to verify the call is still active before navigating to the call screen."""
+    """Check call status. Returns whether the call is cancelled AND whether
+    the recipient has connected. Used by A to detect B's connection state."""
     r = await get_redis()
     cancelled = await r.exists(f"shopho:cancelled_call:{call_id}")
-    return {"cancelled": bool(cancelled)}
+    connected = await r.exists(f"shopho:call_connected:{call_id}")
+    return {"cancelled": bool(cancelled), "connected": bool(connected)}
+
+
+@router.post("/calls/{call_id}/connected")
+async def call_connected(
+    call_id: str,
+    user: User = Depends(current_user),
+):
+    """Called by B (recipient) after successfully connecting to LiveKit room.
+    Stores connected state in Redis and notifies A via WS so A can transition
+    from 'connecting' to 'talking' without relying on LiveKit events."""
+    r = await get_redis()
+    key = f"shopho:call_connected:{call_id}"
+    if await r.exists(key):
+        return {"ok": True}
+    await r.setex(key, _MISSED_CALL_TTL, str(user.id))
+    return {"ok": True}
 
 
 # ─── REST: cancel call ───────────────────────────────────────
