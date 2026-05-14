@@ -115,8 +115,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   TextFormField(
                     controller: _userCtrl,
-                    decoration: const InputDecoration(labelText: 'Tên đăng nhập', prefixIcon: Icon(Icons.person_outline)),
-                    validator: (v) => (v == null || v.isEmpty) ? 'Nhập username' : null,
+                    decoration: const InputDecoration(labelText: 'Số điện thoại', prefixIcon: Icon(Icons.person_outline)),
+                    validator: (v) => (v == null || v.isEmpty) ? 'Nhập số điện thoại' : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
