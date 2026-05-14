@@ -321,12 +321,12 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       return;
     }
 
-    // Guard: don't push a duplicate call screen if already on one.
-    // This happens when B accepts from lock screen (CallKit) and the
-    // WebRtcCallScreen is already showing via the background path.
-    final currentRoute = _router.routerDelegate.currentConfiguration.uri.toString();
-    if (currentRoute.startsWith('/call/')) {
-      CallDebugLogger.log('main', 'navigateBgCall: ALREADY on call screen ($currentRoute), skipping');
+    // Guard: synchronous flag — prevents duplicate call screen when B accepts
+    // from lock screen and the WebRtcCallScreen is already alive in the widget tree.
+    // Route-based check is unreliable because push() in addPostFrameCallback
+    // hasn't committed yet when the next retry fires.
+    if (CallService.isCallScreenOpen) {
+      CallDebugLogger.log('main', 'navigateBgCall: call screen ALREADY OPEN, skipping');
       _backgroundAcceptedCall = null;
       _backgroundAcceptedCallTime = null;
       _pendingAcceptedCallWasConsumed = true;
@@ -389,10 +389,9 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       return;
     }
 
-    // Guard: don't push duplicate call screen if already on one
-    final currentRoute = _router.routerDelegate.currentConfiguration.uri.toString();
-    if (currentRoute.startsWith('/call/')) {
-      CallDebugLogger.log('main', 'navigatePendingCall: ALREADY on call screen ($currentRoute), skipping');
+    // Guard: synchronous flag — prevents duplicate call screen
+    if (CallService.isCallScreenOpen) {
+      CallDebugLogger.log('main', 'navigatePendingCall: call screen ALREADY OPEN, skipping');
       return;
     }
 

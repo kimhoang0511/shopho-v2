@@ -91,6 +91,8 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
     super.initState();
     _createdAt = DateTime.now();
     _room = Room();  // Will be replaced by bg connection if available
+    // Mark call screen as open — prevents duplicate navigation on unlock.
+    CallService.isCallScreenOpen = true;
     // Clear any stale cancel signal from a previous call.
     callCancelNotifier.value = null;
     callCancelNotifier.addListener(_onRemoteCancel);
@@ -115,6 +117,8 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
     if (widget.callId.isNotEmpty) {
       FlutterCallkitIncoming.endCall(widget.callId);
     }
+    // Mark call screen as closed — allows future navigation.
+    CallService.isCallScreenOpen = false;
     super.dispose();
   }
 

@@ -63,6 +63,11 @@ class CallService {
   // Prevents double-navigation when EventChannel and MethodChannel both fire.
   static final Set<String> _handledAcceptCallIds = {};
 
+  /// True while a WebRtcCallScreen is alive (initState → dispose).
+  /// Checked by navigation code to prevent pushing a duplicate call screen
+  /// when B unlocks after accepting from lock screen.
+  static bool isCallScreenOpen = false;
+
   // Tracks missed-call callIds already shown so WS + FCM don't both show it.
   static final Set<String> _missedCallIds = {};
 
