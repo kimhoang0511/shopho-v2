@@ -324,12 +324,22 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
 
           // Check 2: Backend ground truth (LiveKit Server API) every 2s
           // This is the reliable fallback when LiveKit SDK state is stale.
+          // Checks BOTH connected AND cancelled status.
           if (widget.callId.isNotEmpty && _bgPollTick % 2 == 0) {
             try {
               final dio = ref.read(apiClientProvider).dio;
               final res = await dio.get('/calls/${widget.callId}/status?order_id=${widget.orderId}');
               final connected = res.data['connected'] == true;
-              _log('bgPoll: backend connected=$connected');
+              final cancelled = res.data['cancelled'] == true;
+              _log('bgPoll: backend connected=$connected cancelled=$cancelled');
+              if (cancelled && mounted && _callState != _CallState.talking) {
+                _remotePollTimer?.cancel();
+                _ringTimeout?.cancel();
+                _log('bgPoll: backend says CANCELLED -> noAnswer');
+                setState(() => _callState = _CallState.noAnswer);
+                Future.delayed(const Duration(seconds: 2), () => _hangup(sendCancel: false));
+                return;
+              }
               if (connected && mounted && _callState != _CallState.talking) {
                 _remotePollTimer?.cancel();
                 _remoteEverConnected = true;
