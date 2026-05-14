@@ -1,4 +1,4 @@
-const CONTACT_EMAIL = 'kinme.shopho@gmail.com'
+const CONTACT_EMAIL = 'kimhoang05111@gmail.com'
 
 export default function PrivacyPage() {
     return (
@@ -30,9 +30,7 @@ export default function PrivacyPage() {
                     <ul style={styles.ul}>
                         <li style={styles.li}><strong>Thông tin tài khoản:</strong> Họ tên, số điện thoại, email, ảnh đại diện khi bạn đăng ký tài khoản.</li>
                         <li style={styles.li}><strong>Thông tin đơn hàng:</strong> Tiêu đề, mô tả, địa chỉ, hình ảnh liên quan đến đơn hàng bạn tạo hoặc nhận.</li>
-                        <li style={styles.li}><strong>Thông tin thanh toán:</strong> Số dư tài khoản (vàng), lịch sử giao dịch nạp lượt và thanh toán trong ứng dụng.</li>
-                        <li style={styles.li}><strong>Thông tin ngân hàng:</strong> Số tài khoản ngân hàng, tên chủ tài khoản, tên ngân hàng khi bạn đăng ký rút tiền.</li>
-                        <li style={styles.li}><strong>Tin nhắn:</strong> Nội dung trò chuyện giữa bạn và người dùng khác trong ứng dụng.</li>
+                        <li style={styles.li}><strong>Thông tin ngân hàng:</strong> Số tài khoản ngân hàng, tên chủ tài khoản, tên ngân hàng để người đặt đơn chuyển khoản</li>
                     </ul>
 
                     <h3 style={styles.h3}>b) Thông tin thu thập tự động</h3>
