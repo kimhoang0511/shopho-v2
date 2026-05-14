@@ -13,10 +13,6 @@ import '../../core/services/background_call_service.dart';
 
 enum _CallState { connecting, talking, noAnswer, ended }
 
-// ─── Debug log ────────────────────────────────────────────────
-// Remove or set to false before shipping to production.
-const _kDebug = true;
-
 class WebRtcCallScreen extends ConsumerStatefulWidget {
   final String orderId;
   final String callId;
@@ -72,18 +68,8 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
   Duration _elapsed = Duration.zero;
   bool _cancelSent = false;
 
-  // ── Debug log ──────────────────────────────────────────────
-  final List<String> _dbg = [];
-  bool _showDebug = false;
-
   void _log(String msg) {
-    final ts = DateTime.now();
-    final s = '[${ts.hour.toString().padLeft(2,'0')}:'
-        '${ts.minute.toString().padLeft(2,'0')}:'
-        '${ts.second.toString().padLeft(2,'0')}.'
-        '${(ts.millisecond ~/ 10).toString().padLeft(2,'0')}] $msg';
-    debugPrint('[CallDebug] $s');
-    if (_kDebug && mounted) setState(() { _dbg.add(s); if (_dbg.length > 30) _dbg.removeAt(0); });
+    debugPrint('[CallDebug] $msg');
   }
 
   @override
@@ -735,7 +721,6 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
         body: Stack(
           children: [
             SafeArea(child: _buildMain()),
-            if (_kDebug) _buildDebugPanel(),
           ],
         ),
       ),
@@ -835,73 +820,6 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
     );
   }
 
-  Widget _buildDebugPanel() {
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: GestureDetector(
-        onTap: () => setState(() => _showDebug = !_showDebug),
-        child: Container(
-          color: Colors.black87,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => setState(() => _showDebug = !_showDebug),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        child: Text(
-                          'DEBUG [tap] state=$_callState local=${_audioTrack != null ? "ok" : "null"} remote=${_remoteAudioSubscribed ? "sub" : "NO"} muted=$_muted',
-                          style: const TextStyle(color: Colors.yellow, fontSize: 10, fontFamily: 'monospace'),
-                        ),
-                      ),
-                    ),
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6)),
-                    onPressed: () async {
-                      _log('MANUAL fix: restartAudio + restartTrack');
-                      try {
-                        await CallService.restartAudioForCallKit();
-                        _log('restartAudio done');
-                      } catch (e) {
-                        _log('restartAudio ERR: $e');
-                      }
-                      try {
-                        await _audioTrack?.restartTrack();
-                        _log('restartTrack done');
-                      } catch (e) {
-                        _log('restartTrack ERR: $e');
-                      }
-                    },
-                    child: const Text('⟳ Audio', style: TextStyle(color: Colors.orangeAccent, fontSize: 11)),
-                  ),
-                ],
-              ),
-              if (_showDebug)
-                Container(
-                  height: 200,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: ListView.builder(
-                    reverse: true,
-                    itemCount: _dbg.length,
-                    itemBuilder: (_, i) => Text(
-                      _dbg[_dbg.length - 1 - i],
-                      style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontFamily: 'monospace'),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ─── State indicator dot on avatar ───────────────────────────

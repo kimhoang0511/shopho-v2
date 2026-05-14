@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/api/api_client.dart';
-import '../../../../core/services/call_debug_logger.dart';
 import '../../../../core/services/call_service.dart';
 import '../../../../core/services/fcm_service.dart';
 import '../../../../core/widgets/contact_footer.dart';
@@ -32,13 +31,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
 
-  bool _showDebug = false;
-
   void _dlog(String msg) {
     debugPrint('[HomeDebug] $msg');
-    CallDebugLogger.log('Home', msg);
-    // Trigger overlay refresh if visible
-    if (_showDebug && mounted) setState(() {});
   }
 
   void _onAcceptedCallChanged() {
@@ -116,23 +110,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final tt = Theme.of(context).textTheme;
     final meAsync = ref.watch(_meProvider);
     final orderSlots = meAsync.valueOrNull?['order_slots'] as int?;
-    final debugEvents = CallDebugLogger.events;
 
     return Scaffold(
       backgroundColor: cs.surface,
       appBar: AppBar(
         title: const Text('Kinme', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
-          // Debug button — tap to toggle log overlay
-          IconButton(
-            icon: Badge(
-              label: Text('${debugEvents.length}', style: const TextStyle(fontSize: 9)),
-              isLabelVisible: debugEvents.isNotEmpty,
-              child: const Icon(Icons.bug_report_outlined, size: 20),
-            ),
-            onPressed: () => setState(() => _showDebug = !_showDebug),
-            tooltip: 'Debug log',
-          ),
           IconButton(
             icon: const Icon(Icons.person_outline),
             onPressed: () => _navigate('/profile'),
@@ -195,78 +178,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
               ),
             ),
           ),
-
-          // ── Debug overlay (shows ALL CallDebugLogger events from main.dart, call_service, etc.) ──
-          if (_showDebug)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.92),
-                child: SafeArea(
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.only(left: 12),
-                              child: Text('DEBUG LOG (global)', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.copy, color: Colors.white54, size: 18),
-                            tooltip: 'Copy all',
-                            onPressed: () {
-                              final text = debugEvents.map((e) => e.toString()).join('\n');
-                              Clipboard.setData(ClipboardData(text: text));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('All logs copied'), duration: Duration(seconds: 1)),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
-                            tooltip: 'Clear',
-                            onPressed: () => setState(() => CallDebugLogger.clear()),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white54),
-                            onPressed: () => setState(() => _showDebug = false),
-                          ),
-                        ],
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          reverse: true,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          itemCount: debugEvents.length,
-                          itemBuilder: (_, i) {
-                            final ev = debugEvents[debugEvents.length - 1 - i];
-                            final line = ev.toString();
-                            final isError = line.contains('error') || line.contains('ERROR') || line.contains('FAILED');
-                            final isMain = ev.source == 'main';
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
-                              child: Text(
-                                line,
-                                style: TextStyle(
-                                  color: isError
-                                      ? Colors.redAccent
-                                      : isMain
-                                          ? Colors.cyanAccent
-                                          : Colors.greenAccent,
-                                  fontSize: 10,
-                                  fontFamily: 'monospace',
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
