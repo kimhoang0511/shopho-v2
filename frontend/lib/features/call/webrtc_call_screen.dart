@@ -190,11 +190,22 @@ class _WebRtcCallScreenState extends ConsumerState<WebRtcCallScreen>
     }
 
     _ringTimeout?.cancel();
+
+    // If the call was already in talking state, the cancel signal means
+    // the remote hung up during an active call — treat as 'ended', not 'noAnswer'.
+    // This handles the race where cancel push arrives before LiveKit disconnect.
+    if (_callState == _CallState.talking) {
+      _log('_onRemoteCancel: call was talking → ended (remote hung up during call)');
+      setState(() => _callState = _CallState.ended);
+      Future.delayed(const Duration(seconds: 2), () => _hangup(sendCancel: false));
+      return;
+    }
+
     // Only show missed call if:
     // 1. Call never reached talking state, AND
     // 2. We are the recipient (widget.token is empty) — not the caller.
     //    The caller (A) does not receive a "missed call" when B declines.
-    if (_callState != _CallState.talking && widget.token.isEmpty) {
+    if (widget.token.isEmpty) {
       CallService.showMissedCallNotification(
         callerName: widget.counterpartName,
         callId: widget.callId.isNotEmpty ? widget.callId : null,
