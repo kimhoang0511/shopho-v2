@@ -16,7 +16,7 @@ from datetime import timedelta
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from jose import JWTError
-from livekit.api import AccessToken, ListParticipantsRequest, LiveKitAPI, VideoGrants
+from livekit.api import AccessToken, DeleteRoomRequest, ListParticipantsRequest, LiveKitAPI, VideoGrants
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -148,6 +148,24 @@ async def initiate_call(
     room = _room_name(order_id)
     settings = get_settings()
     call_id = str(uuid.uuid4())
+
+    # Clean up any stale room from a previous call on this order.
+    # Room names are reused (order-{id}), so participants from a prior call
+    # may still be present. Deleting the room ensures ListParticipants
+    # won't return false positives.
+    try:
+        lk = LiveKitAPI(
+            url=settings.livekit_url,
+            api_key=settings.livekit_api_key,
+            api_secret=settings.livekit_api_secret,
+        )
+        try:
+            await lk.room.delete_room(DeleteRoomRequest(room=room))
+            logger.info("Deleted stale room %s before new call", room)
+        finally:
+            await lk.aclose()
+    except Exception as e:
+        logger.warning("Could not delete stale room %s: %s (proceeding)", room, e)
 
     caller_token = _livekit_token(
         identity=f"user-{user.id}",
@@ -311,10 +329,14 @@ async def call_status(
                 participants = await lk.room.list_participants(
                     ListParticipantsRequest(room=room_name)
                 )
-                # 2+ participants = both A and B connected
-                connected = len(participants.participants) >= 2
-                logger.info("LiveKit check: room=%s participants=%d connected=%s",
-                           room_name, len(participants.participants), connected)
+                # Verify: caller (user-{caller_id}) must be in the room
+                # AND total participants >= 2. This prevents false positives
+                # from stale participants in a reused room.
+                participant_ids = [p.identity for p in participants.participants]
+                caller_in_room = any(pid.startswith("user-") for pid in participant_ids)
+                connected = caller_in_room and len(participants.participants) >= 2
+                logger.info("LiveKit check: room=%s participants=%d identities=%s connected=%s",
+                           room_name, len(participants.participants), participant_ids, connected)
             finally:
                 await lk.aclose()
         except Exception as e:
