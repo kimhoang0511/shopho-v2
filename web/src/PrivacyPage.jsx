@@ -5,10 +5,7 @@ export default function PrivacyPage() {
         <div style={styles.page}>
             <div style={styles.container}>
                 <div style={styles.logo}>
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                        <rect width="24" height="24" rx="6" fill="#5B6AF0" />
-                        <path d="M7 12h10M12 7l5 5-5 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
+                    <img src="/logo.png" alt="Kinme" style={styles.logoImg} />
                     <span style={styles.logoText}>Kinme</span>
                 </div>
 
@@ -154,6 +151,12 @@ const styles = {
         alignItems: 'center',
         gap: 10,
         marginBottom: 24,
+    },
+    logoImg: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        objectFit: 'cover',
     },
     logoText: {
         fontWeight: 700,

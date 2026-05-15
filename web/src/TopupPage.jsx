@@ -66,10 +66,7 @@ function PackageStep({ token, onOrderCreated }) {
     <div style={styles.container}>
       <div style={styles.header}>
         <div style={styles.logo}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <rect width="24" height="24" rx="6" fill="#5B6AF0" />
-            <path d="M7 12h10M12 7l5 5-5 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <img src="/logo.png" alt="Kinme" style={styles.logoImg} />
           <span style={styles.logoText}>Kinme - Căn hộ vui vẻ</span>
         </div>
         <h1 style={styles.title}>Nạp lượt</h1>
@@ -172,11 +169,8 @@ function QRStep({ token, order, onSuccess, onBack }) {
       </button>
       <div style={styles.header}>
         <div style={styles.logo}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <rect width="24" height="24" rx="6" fill="#5B6AF0" />
-            <path d="M7 12h10M12 7l5 5-5 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span style={styles.logoText}>ShopHo</span>
+          <img src="/logo.png" alt="Kinme" style={styles.logoImg} />
+          <span style={styles.logoText}>Kinme</span>
         </div>
         <h1 style={styles.title}>Quét mã thanh toán</h1>
       </div>
@@ -333,6 +327,12 @@ const styles = {
     alignItems: 'center',
     gap: 8,
     marginBottom: 16,
+  },
+  logoImg: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    objectFit: 'cover',
   },
   logoText: {
     fontWeight: 700,
