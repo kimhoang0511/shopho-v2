@@ -124,7 +124,6 @@ export default function PrivacyPage() {
                     <div style={styles.contactBox}>
                         <p style={styles.contactItem}>📧 Email: <a href={`mailto:${CONTACT_EMAIL}`} style={styles.link}>{CONTACT_EMAIL}</a></p>
                         <p style={styles.contactItem}>📱 Tên ứng dụng: <strong>Kinme</strong></p>
-                        <p style={styles.contactItem}>📦 Tên gói: <strong>com.kinme.shopho</strong></p>
                     </div>
                 </section>
 
