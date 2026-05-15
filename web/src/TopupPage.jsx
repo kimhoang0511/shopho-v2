@@ -3,9 +3,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://backend-shopho-production.up.railway.app/api/v1'
 
 const PACKAGE_META = {
-  5:   { highlight: false, badge: null,            perSlotFn: (p) => `${(p/5).toLocaleString('vi-VN')} ₫ / lượt` },
-  20:  { highlight: true,  badge: 'Phổ biến',      perSlotFn: (p) => `${(p/20).toLocaleString('vi-VN')} ₫ / lượt` },
-  100: { highlight: false, badge: 'Tiết kiệm nhất',perSlotFn: (p) => `${(p/100).toLocaleString('vi-VN')} ₫ / lượt` },
+  5: { highlight: false, badge: null, perSlotFn: (p) => `${(p / 5).toLocaleString('vi-VN')} ₫ / lượt` },
+  20: { highlight: true, badge: 'Phổ biến', perSlotFn: (p) => `${(p / 20).toLocaleString('vi-VN')} ₫ / lượt` },
+  100: { highlight: false, badge: 'Tiết kiệm nhất', perSlotFn: (p) => `${(p / 100).toLocaleString('vi-VN')} ₫ / lượt` },
 }
 
 function formatVnd(n) {
@@ -67,10 +67,10 @@ function PackageStep({ token, onOrderCreated }) {
       <div style={styles.header}>
         <div style={styles.logo}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <rect width="24" height="24" rx="6" fill="#5B6AF0"/>
-            <path d="M7 12h10M12 7l5 5-5 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <rect width="24" height="24" rx="6" fill="#5B6AF0" />
+            <path d="M7 12h10M12 7l5 5-5 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span style={styles.logoText}>ShopHo</span>
+          <span style={styles.logoText}>Kinme - Căn hộ vui vẻ</span>
         </div>
         <h1 style={styles.title}>Nạp lượt</h1>
         <p style={styles.subtitle}>Chọn gói lượt phù hợp để tiếp tục tạo và nhận đơn</p>
@@ -159,22 +159,22 @@ function QRStep({ token, order, onSuccess, onBack }) {
   }, [order.order_code, token, onSuccess])
 
   function copyCode() {
-    navigator.clipboard.writeText(order.order_code).catch(() => {})
+    navigator.clipboard.writeText(order.order_code).catch(() => { })
   }
 
   return (
     <div style={styles.container}>
       <button style={styles.backBtn} onClick={onBack}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         Quay lại
       </button>
       <div style={styles.header}>
         <div style={styles.logo}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <rect width="24" height="24" rx="6" fill="#5B6AF0"/>
-            <path d="M7 12h10M12 7l5 5-5 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <rect width="24" height="24" rx="6" fill="#5B6AF0" />
+            <path d="M7 12h10M12 7l5 5-5 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span style={styles.logoText}>ShopHo</span>
         </div>
