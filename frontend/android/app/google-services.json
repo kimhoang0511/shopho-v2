@@ -9,6 +9,25 @@
       "client_info": {
         "mobilesdk_app_id": "1:376434193584:android:c6cf9512f3ab609e9ef775",
         "android_client_info": {
+          "package_name": "com.kinme.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDal1UwtUZ-jasj7TUaa_wQRUSuntI29CU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:376434193584:android:676a0a35c0f1b37e9ef775",
+        "android_client_info": {
           "package_name": "com.kinme.shopho"
         }
       },

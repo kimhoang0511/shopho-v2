@@ -25,6 +25,7 @@ import 'features/orders/presentation/screens/my_orders_screen.dart';
 import 'features/orders/presentation/screens/order_detail_screen.dart';
 import 'core/services/call_debug_logger.dart';
 import 'core/services/call_service.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'core/services/fcm_service.dart';
@@ -265,6 +266,23 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       _navigateBackgroundAcceptedCall();
       _navigatePendingCall();
 
+      // Android recovery: check for accepted CallKit calls on every resume.
+      // On some Android devices, the EventChannel actionCallAccept event is
+      // lost when the app is in background. This recovery checks the plugin's
+      // own active calls list for any accepted but unhandled calls.
+      if (Platform.isAndroid) {
+        // Retry every 500ms for 5 seconds — plugin state may not be ready immediately
+        _pendingAcceptedCallWasConsumed = false;
+        int _androidRetryCount = 0;
+        Timer.periodic(const Duration(milliseconds: 500), (timer) {
+          _androidRetryCount++;
+          if (_pendingAcceptedCallWasConsumed || _androidRetryCount >= 10) {
+            timer.cancel();
+            return;
+          }
+        });
+      }
+
       if (Platform.isIOS) {
         _iosResumeRetryCount = 0;
         _pendingAcceptedCallWasConsumed = false;
@@ -373,6 +391,10 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
 
   void _navigatePendingCall() {
     final call = CallService.consumePendingAcceptedCall();
+    CallDebugLogger.log('main', 'navigatePendingCall CALLED', data: {
+      'callNull': call == null,
+      'isCallScreenOpen': CallService.isCallScreenOpen,
+    });
     if (call == null) return;
 
     final lifecycle = WidgetsBinding.instance.lifecycleState;
@@ -380,6 +402,7 @@ class _ShopHoAppState extends State<ShopHoApp> with WidgetsBindingObserver {
       'orderId': call['orderId'],
       'callId': call['callId'],
       'lifecycle': lifecycle.toString(),
+      'isCallScreenOpen': CallService.isCallScreenOpen,
     });
 
     if (lifecycle != AppLifecycleState.resumed && lifecycle != AppLifecycleState.inactive) {

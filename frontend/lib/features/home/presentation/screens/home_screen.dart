@@ -31,18 +31,12 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
 
-  void _dlog(String msg) {
-    debugPrint('[HomeDebug] $msg');
-  }
-
   void _onAcceptedCallChanged() {
     final v = CallService.acceptedCallNotifier.value;
-    _dlog('acceptedCallNotifier → orderId=${v?['orderId']} callId=${v?['callId']}');
   }
 
   void _onPendingOrderTapChanged() {
     final v = FcmService.pendingOrderTapNotifier.value;
-    _dlog('pendingOrderTap → $v');
   }
 
   @override
@@ -51,7 +45,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     CallService.acceptedCallNotifier.addListener(_onAcceptedCallChanged);
     FcmService.pendingOrderTapNotifier.addListener(_onPendingOrderTapChanged);
-    _dlog('HomeScreen initState  lifecycle=${WidgetsBinding.instance.lifecycleState}');
     if (Platform.isIOS) _checkPendingNative();
   }
 
@@ -59,13 +52,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     try {
       const ch = MethodChannel('shopho/call_native');
       final callId = await ch.invokeMethod<String?>('getPendingAcceptCallId');
-      _dlog('getPendingAcceptCallId → $callId');
       if (callId != null) {
         final full = await ch.invokeMethod<Map?>('getPendingCallFull', callId);
-        _dlog('getPendingCallFull($callId) → ${full?.keys.toList()}  orderId=${full?['order_id']}');
       }
     } catch (e) {
-      _dlog('checkPendingNative error: $e');
     }
   }
 
@@ -79,7 +69,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _dlog('lifecycle → $state');
     if (state == AppLifecycleState.resumed) {
       ref.invalidate(_meProvider);
       if (Platform.isIOS) _checkPendingNative();

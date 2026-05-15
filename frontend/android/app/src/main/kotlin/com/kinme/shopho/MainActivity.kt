@@ -1,4 +1,4 @@
-package com.kinme.app
+package com.kinme.shopho
 
 import android.content.Intent
 import android.os.Bundle
@@ -46,7 +46,8 @@ class MainActivity : FlutterActivity() {
         handleAcceptIntent(intent)
     }
 
-    private fun handleAcceptIntent(intent: Intent) {
+    private fun handleAcceptIntent(intent: Intent?) {
+        if (intent == null) return
         val action = intent.action ?: return
         if (!action.endsWith(ACTION_SUFFIX)) return
 
@@ -59,14 +60,14 @@ class MainActivity : FlutterActivity() {
             .edit().putString(KEY_PENDING_CALL_ID, callId).apply()
 
         // Re-fire the accept broadcast so the plugin's EventChannel delivers
-        // actionCallAccept to Dart with full call data (extra.order_id etc.).
-        // On cold start the Flutter engine isn't ready yet so the event will be
-        // dropped, but the SharedPreferences path above covers that case.
+        // actionCallAccept to Dart with full call data.
         try {
             val broadcastIntent = CallkitIncomingBroadcastReceiver.getIntentAccept(this, data)
             broadcastIntent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
             sendBroadcast(broadcastIntent)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Broadcast failed", e)
+        }
 
         // Secondary warm-start notification via MethodChannel.
         methodChannel?.invokeMethod("callAccepted", callId)

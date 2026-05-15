@@ -367,7 +367,8 @@ class CallService {
   /// paths. This is the most reliable fallback because it polls the plugin's
   /// own internal state — no dependency on delegates or timing.
   static Future<void> recoverAcceptedCallKitCall() async {
-    if (!Platform.isIOS) return;
+    // Works on both iOS and Android — checks for accepted CallKit calls
+    // that were not handled by the EventChannel.
     try {
       final active = await FlutterCallkitIncoming.activeCalls();
       if (active is! List || active.isEmpty) return;
@@ -557,7 +558,11 @@ class CallService {
     switch (event.event) {
       case Event.actionCallAccept:
         _activeCallIds.remove(callId);
-        if (_handledAcceptCallIds.contains(callId)) break;
+        CallDebugLogger.log('CS', 'actionCallAccept callId=$callId');
+        if (_handledAcceptCallIds.contains(callId)) {
+          CallDebugLogger.log('CS', 'actionCallAccept: already handled, skip');
+          break;
+        }
         // Do NOT claim _handledAcceptCallIds yet — claim only after orderId is
         // confirmed. If we claim here and orderId turns out to be null (e.g.,
         // VoIP push path where extra is empty), _handleNativeAccept would be
@@ -701,7 +706,7 @@ class CallService {
 
         _inMemoryCallCache.remove(callId);
         _clearCallData(callId).ignore();
-        await FlutterCallkitIncoming.endAllCalls();
+        try { await FlutterCallkitIncoming.endAllCalls(); } catch (_) {}
 
         if (orderId != null && orderId.isNotEmpty && callId.isNotEmpty) {
           _sendCancel(orderId, callId).ignore();
@@ -723,7 +728,7 @@ class CallService {
         }
         _inMemoryCallCache.remove(callId);
         _clearCallData(callId).ignore();
-        await FlutterCallkitIncoming.endAllCalls();
+        try { await FlutterCallkitIncoming.endAllCalls(); } catch (_) {}
         if (endedOrderId != null && endedOrderId.isNotEmpty && callId.isNotEmpty) {
           _sendCancel(endedOrderId, callId).ignore();
         }
@@ -733,6 +738,7 @@ class CallService {
         break;
     }
   }
+
 
   static Future<void> _sendCancel(String orderId, String callId) async {
     try {
@@ -872,7 +878,9 @@ class CallService {
           await _sendCancel(staleOrderId, id);
         }
       }
-      if (foundStale) await FlutterCallkitIncoming.endAllCalls();
+      if (foundStale) {
+        try { await FlutterCallkitIncoming.endAllCalls(); } catch (_) {}
+      }
     } catch (e) {
       debugPrint('[CallService] _cleanUpStaleCalls error: $e');
     }
