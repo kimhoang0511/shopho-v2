@@ -693,24 +693,6 @@ applyLang(currentLang);
 setupTabs();
 setTimeout(setupScrollSpy, 100);
 
-// FAB contact popup
-const fabContact   = document.getElementById('fabContact');
-const contactPopup = document.getElementById('contactPopup');
-const orderImgHTML = `<img src="icon/icon order.png" alt="Contact" width="30" height="30" style="object-fit:contain;">`;
-const closeIconSVG = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>`;
-
-fabContact.addEventListener('click', e => {
-  e.stopPropagation();
-  const isOpen = contactPopup.classList.contains('open');
-  contactPopup.classList.toggle('open', !isOpen);
-  fabContact.innerHTML = isOpen ? orderImgHTML : closeIconSVG;
-});
-document.addEventListener('click', e => {
-  if (!e.target.closest('.fab-group')) {
-    contactPopup.classList.remove('open');
-    fabContact.innerHTML = orderImgHTML;
-  }
-});
 </script>
 
 <!-- FAB buttons -->
@@ -760,5 +742,24 @@ document.addEventListener('click', e => {
   </a>
 </div>
 
+<script>
+const fabContact   = document.getElementById('fabContact');
+const contactPopup = document.getElementById('contactPopup');
+const orderImgHTML = `<img src="icon/icon order.png" alt="Contact" width="30" height="30" style="object-fit:contain;">`;
+const closeIconSVG = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+
+fabContact.addEventListener('click', e => {
+  e.stopPropagation();
+  const isOpen = contactPopup.classList.contains('open');
+  contactPopup.classList.toggle('open', !isOpen);
+  fabContact.innerHTML = isOpen ? orderImgHTML : closeIconSVG;
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.fab-group')) {
+    contactPopup.classList.remove('open');
+    fabContact.innerHTML = orderImgHTML;
+  }
+});
+</script>
 </body>
 </html>
