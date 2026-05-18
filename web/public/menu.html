@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Melo Menu | Korean Fusion Cuisine</title>
+<meta name="description" content="Explore Melo Korean Fusion Restaurant's full menu — starters, mains, desserts, drinks, and more in Phnom Penh.">
+<link rel="icon" href="logo melo.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&family=Noto+Sans+Khmer:wght@400;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --orange: #E97A2F;
+  --orange-dark: #C45E15;
+  --orange-light: #F5A55A;
+  --orange-pale: #FFF3E8;
+  --cream: #FFFAF5;
+  --dark: #1A0D00;
+  --gray: #6B5B4E;
+  --radius: 14px;
+  --nav-h: 60px;
+  --tab-h: 50px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Poppins', sans-serif;
+  background: var(--cream);
+  color: var(--dark);
+  min-height: 100vh;
+}
+.font-km { font-family: 'Noto Sans Khmer', sans-serif; }
+.font-ko { font-family: 'Noto Sans KR', sans-serif; }
+
+/* ── NAVBAR ── */
+#navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  height: var(--nav-h);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+}
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--dark);
+}
+.nav-brand img {
+  height: 38px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.nav-brand span {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--orange);
+  white-space: nowrap;
+}
+.nav-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  color: var(--gray);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1.5px solid #e0d5cd;
+  transition: all .2s;
+  white-space: nowrap;
+}
+.nav-back:hover {
+  background: var(--orange-pale);
+  color: var(--orange);
+  border-color: var(--orange-light);
+}
+.nav-back svg { width: 14px; height: 14px; }
+
+/* Language dropdown */
+.lang-dropdown { position: relative; display: flex; align-items: center; }
+.lang-toggle {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: 1.5px solid #e0d5cd;
+  border-radius: 20px; padding: 5px 12px;
+  cursor: pointer; font-size: 0.85rem; font-weight: 500;
+  color: var(--dark); transition: all .2s;
+}
+.lang-toggle:hover { border-color: var(--orange); color: var(--orange); }
+.lang-toggle-arrow { width:12px; height:12px; transition:transform .2s; }
+.lang-dropdown.open .lang-toggle-arrow { transform: rotate(180deg); }
+.lang-menu {
+  display: none; position: absolute; top: calc(100% + 8px); right: 0;
+  background: #fff; border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  padding: 6px; min-width: 140px; z-index: 200;
+}
+.lang-dropdown.open .lang-menu { display: block; }
+.lang-option {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 9px 12px; border: none;
+  background: none; cursor: pointer; border-radius: 8px;
+  font-size: 0.88rem; font-weight: 500; color: var(--dark);
+  transition: background .15s;
+}
+.lang-option:hover { background: var(--orange-pale); color: var(--orange); }
+.lang-option.active { background: var(--orange); color: #fff; }
+
+.nav-center { display: flex; justify-content: center; align-items: center; gap: 16px; }
+
+/* ── CATEGORY TABS ── */
+#cat-tabs {
+  position: sticky;
+  top: var(--nav-h);
+  z-index: 90;
+  background: #fff;
+  border-bottom: 2px solid #f0e8e0;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  height: var(--tab-h);
+}
+#cat-tabs::-webkit-scrollbar { display: none; }
+.cat-tab {
+  flex-shrink: 0;
+  padding: 0 20px;
+  height: 100%;
+  display: flex; align-items: center;
+  font-size: 0.88rem; font-weight: 600;
+  color: var(--gray); cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all .2s; white-space: nowrap;
+}
+.cat-tab:hover { color: var(--orange); }
+.cat-tab.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+/* ── MAIN CONTENT ── */
+.menu-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px 60px;
+}
+.cat-section { margin-bottom: 48px; }
+.cat-heading {
+  font-size: 1.4rem; font-weight: 700;
+  color: var(--dark); margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--orange-pale);
+  display: flex; align-items: center; gap: 10px;
+}
+.cat-heading::before {
+  content: ''; display: block;
+  width: 4px; height: 24px;
+  background: var(--orange); border-radius: 4px;
+}
+
+/* ── MENU GRID ── */
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+@media (min-width: 640px) { .menu-grid { grid-template-columns: repeat(3, 1fr); gap: 16px; } }
+@media (min-width: 900px) { .menu-grid { grid-template-columns: repeat(4, 1fr); gap: 18px; } }
+@media (min-width: 1100px) { .menu-grid { grid-template-columns: repeat(5, 1fr); gap: 18px; } }
+
+/* ── MENU CARD ── */
+.menu-card {
+  background: #fff;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  transition: transform .2s, box-shadow .2s;
+  display: flex; flex-direction: column;
+}
+.menu-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(233,122,47,0.15);
+}
+.card-img-wrap {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: #f5ece4;
+}
+.card-img-wrap img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  transition: transform .3s;
+}
+.menu-card:hover .card-img-wrap img { transform: scale(1.05); }
+.card-badge {
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(0,0,0,0.55); color: #fff;
+  font-size: 0.7rem; font-weight: 600;
+  padding: 2px 7px; border-radius: 20px;
+  backdrop-filter: blur(4px);
+}
+.card-best {
+  position: absolute; top: 8px; right: 8px;
+  background: var(--orange); color: #fff;
+  font-size: 0.65rem; font-weight: 700;
+  padding: 2px 8px; border-radius: 20px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.card-body {
+  padding: 10px 12px 12px;
+  flex: 1; display: flex; flex-direction: column; gap: 4px;
+}
+.card-name {
+  font-size: 0.85rem; font-weight: 600;
+  color: var(--dark); line-height: 1.3;
+  min-height: 2.2em;
+}
+.card-price {
+  font-size: 1rem; font-weight: 700;
+  color: var(--orange); margin-top: auto;
+}
+.card-spicy {
+  display: flex; gap: 2px; align-items: center;
+}
+.spicy-icon { font-size: 0.75rem; }
+
+/* ── HERO BANNER ── */
+.menu-hero {
+  background: linear-gradient(135deg, var(--orange) 0%, var(--orange-dark) 100%);
+  color: #fff; padding: 32px 20px;
+  text-align: center;
+}
+.menu-hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: 6px; }
+.menu-hero p { opacity: 0.88; font-size: 1rem; }
+
+/* ── MOBILE ── */
+@media (max-width: 640px) {
+  #navbar { padding: 0 14px; }
+  .nav-brand span { display: none; }
+  .nav-back span { display: none; }
+  .nav-back { padding: 6px 8px; border-radius: 50%; width: 36px; height: 36px; justify-content: center; }
+  .lang-toggle-name { display: none; }
+  .lang-toggle { padding: 5px 8px; }
+  .menu-hero h1 { font-size: 1.5rem; }
+  .cat-tab { padding: 0 14px; font-size: 0.82rem; }
+  .card-name { font-size: 0.8rem; }
+}
+
+/* ── FAB ── */
+.fab-group {
+  position: fixed; bottom: 28px; right: 24px;
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 12px; z-index: 900;
+}
+.fab {
+  width: 52px; height: 52px; border-radius: 50%;
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.22);
+  transition: transform .2s, box-shadow .2s;
+  text-decoration: none;
+}
+.fab:hover { transform: scale(1.1); box-shadow: 0 8px 28px rgba(0,0,0,0.28); }
+.fab-address { background: #fff; }
+.fab-contact { background: var(--orange); }
+
+/* Contact popup */
+.contact-popup {
+  position: absolute; bottom: calc(100% + 12px); right: 0;
+  background: #fff; border-radius: 20px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+  padding: 20px; min-width: 240px;
+  display: none; flex-direction: column; gap: 0;
+  overflow: hidden;
+}
+.contact-popup.open { display: flex; animation: popIn .22s ease; }
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+.contact-popup-title {
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--gray); margin-bottom: 14px;
+}
+.contact-option {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 14px; border-radius: 14px;
+  text-decoration: none; transition: background .15s;
+  border: none; background: none; cursor: pointer;
+  width: 100%; text-align: left; font-family: inherit;
+}
+.contact-option:hover { background: #fff3e8; }
+.contact-option-icon {
+  width: 42px; height: 42px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem; flex-shrink: 0;
+}
+.contact-option-icon.tg  { background: #e8f4fd; }
+.contact-option-icon.tel { background: #edf7ee; }
+.contact-option-text strong { display: block; font-size: 0.92rem; font-weight: 800; color: var(--dark); }
+.contact-option-text span  { font-size: 0.78rem; color: var(--gray); }
+.contact-popup-arrow {
+  position: absolute; bottom: -8px; right: 22px;
+  width: 16px; height: 16px; background: #fff;
+  transform: rotate(45deg);
+  box-shadow: 3px 3px 8px rgba(0,0,0,0.06);
+}
+</style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav id="navbar">
+  <a class="nav-brand" href="melo-landing.html">
+    <img src="logo melo.png" alt="Melo Logo">
+    <span>Melo Korean Fusion</span>
+  </a>
+  <div class="nav-center"></div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div class="lang-dropdown" id="langDropdown">
+      <button class="lang-toggle" id="langToggle">
+        <span class="lang-flag">🇬🇧</span>
+        <span class="lang-toggle-name">English</span>
+        <svg class="lang-toggle-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="lang-menu">
+        <button class="lang-option active" data-lang="en">🇬🇧 English ✓</button>
+        <button class="lang-option" data-lang="km">🇰🇭 ភាសាខ្មែរ</button>
+        <button class="lang-option" data-lang="ko">🇰🇷 한국어</button>
+      </div>
+    </div>
+    <a class="nav-back" href="melo-landing.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      <span>Home</span>
+    </a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="menu-hero">
+  <h1 data-i18n="menu_title">Our Menu</h1>
+  <p data-i18n="menu_sub">Fresh flavors inspired by Korea, crafted in Phnom Penh</p>
+</div>
+
+<!-- CATEGORY TABS -->
+<div id="cat-tabs">
+  <div class="cat-tab active" data-cat="starter" data-i18n="cat_starter">Starter</div>
+  <div class="cat-tab" data-cat="brunch" data-i18n="cat_brunch">Brunch</div>
+  <div class="cat-tab" data-cat="main" data-i18n="cat_main">Main Dishes</div>
+  <div class="cat-tab" data-cat="dessert" data-i18n="cat_dessert">Dessert</div>
+  <div class="cat-tab" data-cat="drinks" data-i18n="cat_drinks">Drinks</div>
+  <div class="cat-tab" data-cat="liquor" data-i18n="cat_liquor">Liquor</div>
+  <div class="cat-tab" data-cat="wine" data-i18n="cat_wine">Wine</div>
+</div>
+
+<!-- MENU CONTENT -->
+<div class="menu-container" id="menuContainer"></div>
+
+<script>
+const MENU = [
+  {badge:'S1',cat:'starter',img:'menu-images/S1.b4d472b8f52109970836.webp',best:true,spicy:0,en:'Mango Shrimp Salad',km:'ញ៉ាំស្វាយបង្គារ',ko:'망고 쉬림프 샐러드',price:'6.00'},
+  {badge:'S3',cat:'starter',img:'menu-images/S3.3ef2dca8fb1e0b201e70.webp',best:false,spicy:0,en:'Beef Salad',km:'សាឡាត់សាច់គោ',ko:'비프 샐러드',price:'8.00'},
+  {badge:'S6',cat:'starter',img:'menu-images/S6.0cf6862924384450f8b2.webp',best:false,spicy:0,en:'Salmon Salad',km:'សាលម៉ុន សាឡាត់',ko:'연어 샐러드',price:'6.00'},
+  {badge:'S4',cat:'starter',img:'menu-images/S4.8f0a4028c8d59c7c1c38.webp',best:false,spicy:0,en:'Roast Chicken Salad',km:'សាឡាត់មាន់អាំង',ko:'로스트 치킨 샐러드',price:'7.00'},
+  {badge:'S5',cat:'starter',img:'menu-images/S5.69ad4d86a263ce2711d0.webp',best:false,spicy:0,en:'Trio Salad Platter',km:'ចានសាឡាត់ 3មុខ',ko:'샐러드 3종 플레터',price:'18.00'},
+  {badge:'S7',cat:'starter',img:'menu-images/S7.7b776145a95b26810028.webp',best:false,spicy:0,en:'Japchae (Stir-fried Glass Noodles)',km:'ឆាមីសួរជាមួយសាច់គោ',ko:'잡채',price:'6.00'},
+  {badge:'S8',cat:'starter',img:'menu-images/S8.757e80225e8dda365622.webp',best:true,spicy:0,en:'Chopped Green Onion Pancake',km:'នំបាំងបាហ្គេល',ko:'쫑쫑이파전',price:'6.00'},
+  {badge:'B1',cat:'brunch',img:'menu-images/B1.2f4cd0f46c3c626ba7ac.webp',best:true,spicy:0,en:'American Breakfast',km:'ឈុតអាហារពេលព្រឹក',ko:'아메리칸 브랙퍼스트',price:'8.00'},
+  {badge:'B2',cat:'brunch',img:'menu-images/B2.27ec5e671e381500ed81.webp',best:false,spicy:0,en:'Salmon Avocado Bagel',km:'បាហ្គេលអាវ៉ូកាដូសាល់ម៉ុនសាំងវិច',ko:'연어 아보카도 베이글',price:'7.00'},
+  {badge:'B3',cat:'brunch',img:'menu-images/B3.c3a465458ef5b72164d7.webp',best:false,spicy:0,en:'Ham, Cheese & Egg Croissant',km:'នំក្រូសង់ពងមាន់និងហេមសាំងវិច',ko:'햄,치즈 애그 크로아상',price:'7.00'},
+  {badge:'M6',cat:'main',img:'menu-images/M6.322d42b01d9b888dcec1.webp',best:false,spicy:0,en:'Signature Pork Cutlet',km:'សាច់ជ្រួកបំពងពិសេសប្រចាំមេឡូ',ko:'시그니처 등심 돈가스',price:'14.00'},
+  {badge:'M7',cat:'main',img:'menu-images/M7.4e84063925e88e0fb89e.webp',best:true,spicy:0,en:'Korean Style Big Cutlet',km:'សាច់ជ្រួកបំពងខ្នាតធំស្ទាយកូរ៉េ',ko:'한국식 왕돈가스',price:'16.00'},
+  {badge:'M56',cat:'main',img:'menu-images/M56.71adce72b3674cc41ec4.webp',best:false,spicy:3,en:'Korean Style Spicy Big Cutlet',km:'សាច់បំពងខ្នាតធំរសជាតិហឹរបែបកូរ៉េ',ko:'매운 왕돈가스',price:'16.00'},
+  {badge:'M8',cat:'main',img:'menu-images/M8.3081919971a8649f323b.webp',best:false,spicy:0,en:'Cheese Pork Cutlet',km:'សាច់ជ្រួកបំពងឈីស',ko:'치즈 돈가스',price:'14.00'},
+  {badge:'M48',cat:'main',img:'menu-images/M48.6072cf52570f0e7621c3.webp',best:true,spicy:0,en:'Giant Cut Pork Cuttlet',km:'សាច់ជ្រូកបំពងធំ',ko:'자이언트 컷 돈가스',price:'18.00'},
+  {badge:'M47',cat:'main',img:'menu-images/M47.d250b45f6ae8cc54062b.webp',best:false,spicy:0,en:'Premium Beef Flat Iron Steak',km:'ស្តេកសាច់គោផ្តេតអាយរ៉ន',ko:'부채살 스테이크_250g',price:'38.00'},
+  {badge:'M50',cat:'main',img:'menu-images/M50.29efabc5cdbe3ebedf8a.webp',best:false,spicy:0,en:'Grilled Pork Neck Steak',km:'សាច់កជ្រូកអាំង',ko:'돼지 목살 스테이크',price:'20.00'},
+  {badge:'M11',cat:'main',img:'menu-images/M11.1622e96999311604a776.webp',best:false,spicy:0,en:'Hamburger Steak',km:'ហែមបឺហ្គឺស្តេក',ko:'함박스테이크',price:'15.00'},
+  {badge:'M5',cat:'main',img:'menu-images/M5.ac91ea47906ad9a9e612.webp',best:false,spicy:1,en:'Spicy Stir Fried Pork Lettuce Wrap',km:'ឈុត សាច់ជ្រួកឆាខ្ចប់សាឡាត់',ko:'제육쌈밥 한상차림',price:'13.00'},
+  {badge:'M49',cat:'main',img:'menu-images/M49.322287f1d1ade970828b.webp',best:false,spicy:0,en:'Giant Cut Pork Cuttlet Rice Bowl',km:'បាយសាច់ជ្រូកធំ បំពង',ko:'자이언트 컷 돈가스 덮밥',price:'18.00'},
+  {badge:'M14',cat:'main',img:'menu-images/M14.7dcf4e942dd9591470a2.webp',best:true,spicy:0,en:'Omuurice',km:'បាយខ្ចប់ពងទាលាយសាច់គោនិងបន្លែ',ko:'오므라이스',price:'10.00'},
+  {badge:'M13',cat:'main',img:'menu-images/M13.d5e3b63d33914a9c1adb.webp',best:false,spicy:1,en:'Kimchi Fried Rice',km:'បាយឆាគីមឈី',ko:'김치볶음밥',price:'10.00'},
+  {badge:'M15',cat:'main',img:'menu-images/M15.2e2e8a494996b4133a67.webp',best:false,spicy:0,en:'Eel Rice Bowl',km:'បាយ អន្ទង់អាំង',ko:'장어덮밥',price:'21.00'},
+  {badge:'M18',cat:'main',img:'menu-images/M18.5f8631c6d794cb03dfd4.webp',best:false,spicy:0,en:'Bulgogi Rice Bowl',km:'បាយប៊ុលកូ គី',ko:'불고기덮밥',price:'11.00'},
+  {badge:'M58',cat:'main',img:'menu-images/M58.e144a81bdb2c3c2ac3ee.webp',best:false,spicy:0,en:'Bulgogi Set Meal',km:'ឈុតសាច់គោប៊ូលហ្គូហ្គី',ko:'불고기 정식',price:'12.00'},
+  {badge:'M59',cat:'main',img:'menu-images/M59.3e31b1e1b4345cfe2062.webp',best:true,spicy:0,en:'Bulgogi Bibimbap',km:'បាយច្របល់សាច់គោ',ko:'불고기 비빔밥',price:'10.00'},
+  {badge:'M26',cat:'main',img:'menu-images/M26.97db3f4561d40f9bb802.webp',best:true,spicy:0,en:'Signature Cold Udon',km:'ម៉ីអ៊ូដងត្រជាក់',ko:'시그니처 냉우동',price:'11.00'},
+  {badge:'M55',cat:'main',img:'menu-images/M55.0250706684ad17181cfc.webp',best:false,spicy:0,en:'Soba',km:'មេឡួ សូបា',ko:'메밀소바',price:'10.00'},
+  {badge:'M51',cat:'main',img:'menu-images/M51.8e22975c73b54c23a560.webp',best:false,spicy:2,en:'Spicy Mixed Udon',km:'មីអ៊ូដងលាយរស់ជាតិហិរ',ko:'비빔 우동',price:'11.00'},
+  {badge:'M28',cat:'main',img:'menu-images/M28.4af23a5ed1fe71db348d.webp',best:false,spicy:2,en:'Spicy Seafood Fried Udon',km:'ម៉ីអ៊ូដងឆាគ្រឿងសមុទ្រហឹ',ko:'매운 해물 볶음우동',price:'12.00'},
+  {badge:'M60',cat:'main',img:'menu-images/M60.914ff089379a27c88f57.webp',best:false,spicy:2,en:'Spicy Seafood Jjamppong Soft Tofu Stew',km:'ស៊ុបតៅហ៊ូគ្រឿងសមុទ្រ',ko:'짬뽕 순두부 찌개',price:'9.00'},
+  {badge:'M30',cat:'main',img:'menu-images/M30.58cdcda22da7ec4531bd.webp',best:true,spicy:3,en:'Spicy Beef Noodle Soup with Brisket',km:'ម៉ីឆាមប៉ុងសាច់ទ្រូងគោ',ko:'차돌짬뽕',price:'12.00'},
+  {badge:'M29',cat:'main',img:'menu-images/M29.4ef6b9e024d671d016f1.webp',best:true,spicy:2,en:'Spicy Chewy Noodle',km:'គុយទាវឆាកូរ៉េ',ko:'쫄면',price:'10.00'},
+  {badge:'M31',cat:'main',img:'menu-images/M31.0f5bd4d4ec8f0587cdf5.webp',best:false,spicy:0,en:'Perilla Oil Buckwheat Noodle',km:'គុយទាវ ប្រេងភើរីឡា',ko:'들기름 막국수',price:'11.00'},
+  {badge:'M46',cat:'main',img:'menu-images/M46.f4f7d44458b98a256764.webp',best:false,spicy:0,en:'Seafood Hand-Torn Noodle Soup',km:'ស៊ុបគ្រឿងសមុទ្រ',ko:'해물 수제비',price:'16.00'},
+  {badge:'M57',cat:'main',img:'menu-images/M57.0baae7ea1a0fa4c6c198.webp',best:false,spicy:0,en:'Mentaiko Cream Pasta',km:'ផាស្ដារគ្រីមពងត្រី',ko:'명란 크림 파스타',price:'12.00'},
+  {badge:'M20',cat:'main',img:'menu-images/M20.7a47b579de98bc4c8467.webp',best:false,spicy:0,en:'Truffle Cream Pasta',km:'ផាស្តា ផ្សិតត្រូហ្វល គ្រីម',ko:'트러플 크림 파스타',price:'12.00'},
+  {badge:'M21',cat:'main',img:'menu-images/M21.d41f24efb5d7a0ba0910.webp',best:true,spicy:0,en:'Rose Pane Pasta',km:'រ៉ូសផេន ផាស្តា',ko:'로제 빠네 파스타',price:'12.00'},
+  {badge:'M53',cat:'main',img:'menu-images/M53.3cd537986f9ea0fafd4c.webp',best:false,spicy:0,en:'Tomato Meatball Pasta',km:'ផាស្តាប្រហិត ជាមួយនិងប៉េងប៉ោះ',ko:'토마토 미트볼 파스타',price:'11.00'},
+  {badge:'M54',cat:'main',img:'menu-images/M54.3e93d0e84eefecf687e7.webp',best:true,spicy:0,en:'Tomato Seafood Pasta',km:'ផាស្តាគ្រឿងសមុទ្រ ជាមួយនិងប៉េងប៉ោះ',ko:'토마토 해산물 파스타',price:'12.00'},
+  {badge:'M25',cat:'main',img:'menu-images/M25.153b1f120c29a776fed9.webp',best:false,spicy:0,en:'Shrimp Burger',km:'បឺហ្គឺបង្គា',ko:'새우버거',price:'14.00'},
+  {badge:'M23',cat:'main',img:'menu-images/M23.2f4a12c9652478b75d52.webp',best:true,spicy:0,en:'Signature Beef Burger',km:'បឺហ្គឺសាច់គោពិសេសប្រចាំមេឡូ',ko:'시그니처 비프 버거',price:'14.00'},
+  {badge:'M24',cat:'main',img:'menu-images/M24.aaef6c7331984332b051.webp',best:false,spicy:2,en:'Spicy Chicken Burger',km:'បឺហ្គឺសាច់មាន់',ko:'스파이시 치킨 버거',price:'12.00'},
+  {badge:'M44',cat:'main',img:'menu-images/M44.2d226db447169285e938.webp',best:false,spicy:0,en:'K Bulgogi Pizza',km:'ប៉ូលគូហ្គី ភិហ្សា',ko:'K 불고기 피자',price:'14.00'},
+  {badge:'M45',cat:'main',img:'menu-images/M45.0624873da2e5492080f4.webp',best:true,spicy:1,en:'K Spicy Chicken Pizza',km:'ភីហ្សាសាច់មាន់ហិរ',ko:'K 매운 닭갈비 피자',price:'14.00'},
+  {badge:'M37',cat:'main',img:'menu-images/M37.7a84c067b224bd21c39c.webp',best:true,spicy:2,en:'Boneless Spicy Korean Fried Chicken',km:'មាន់បំពងកូរ៉េ រសជាតិហឹ (អត់ឆ្អឹង)',ko:'순살 양념치킨',price:'9.00'},
+  {badge:'M38',cat:'main',img:'menu-images/M38.34c7c44852bc26b6b4c7.webp',best:false,spicy:0,en:'Boneless Fried Chicken',km:'មាន់បំពង (អត់ឆ្អឹង)',ko:'순살 후라이드치킨',price:'9.00'},
+  {badge:'M39',cat:'main',img:'menu-images/M39.1677b4b44e3322c5c189.webp',best:false,spicy:0,en:'Boneless Garlic Soy Sauce Chicken',km:'មាន់បំពងទឹកស៊ីអ៊ីវខ្ទឹមស (អត់ឆ្អឹង)',ko:'순살 마늘간장치킨',price:'9.00'},
+  {badge:'M41',cat:'main',img:'menu-images/M41.c3ffe27a11ca5ca74908.webp',best:false,spicy:2,en:'Tteokbokki',km:'តុកប៉ុកគី',ko:'떡볶이',price:'6.00'},
+  {badge:'M42',cat:'main',img:'menu-images/M42.0f6472df40ddb70c304d.webp',best:false,spicy:0,en:'Signature Gimbap',km:'គីមប៉ាប់ពិសេសប្រចាំមេឡូ',ko:'시그니처 김밥',price:'6.00'},
+  {badge:'M43',cat:'main',img:'menu-images/M43.c1a62c446a242180f49a.webp',best:false,spicy:0,en:'Tuna Gimbap',km:'គីមប៉ាប់ត្រីធូណា',ko:'참치 김밥',price:'6.00'},
+  {badge:'D1',cat:'dessert',img:'menu-images/D1.65ffa200957d1f736582.webp',best:true,spicy:0,en:'Tiramisu',km:'នំខេកធីរ៉ាមីស៊ុ',ko:'티라미슈',price:'4.00'},
+  {badge:'D2',cat:'dessert',img:'menu-images/D2.ab015c1b042c0def5871.webp',best:false,spicy:0,en:'Cheese Cake',km:'នំខេកឈីស',ko:'치즈 케이크',price:'4.00'},
+  {badge:'D27',cat:'dessert',img:'menu-images/D27.7abba0b43c88302489f7.webp',best:false,spicy:0,en:'Matcha Cheese cake',km:'នំខេកឈីសម៉ាត់ឆា',ko:'말차 치즈 케이크',price:'4.00'},
+  {badge:'D25',cat:'dessert',img:'menu-images/D25.72abbc6d2596262e13e9.webp',best:false,spicy:0,en:'Dubai Chewy Cookie',km:'នំទាន់ស្វិតឌូបៃ',ko:'두바이 쫀득 쿠키',price:'3.50'},
+  {badge:'D26',cat:'dessert',img:'menu-images/D26.72139bf8f8ebcd349df6.webp',best:false,spicy:0,en:'Butter Mochi',km:'នំប៊ឺរម៉ូជី',ko:'K 버터떡',price:'4.30'},
+  {badge:'D28',cat:'dessert',img:'menu-images/D28.fb454d08072ac5a3273f.webp',best:false,spicy:0,en:'Chocolate Baguette',km:'នំបុ័ងរសជាតិសូកូឡា',ko:'초코 바게트',price:'2.40'},
+  {badge:'D23',cat:'dessert',img:'menu-images/D23.676b2f4abfd0c20013f7.webp',best:false,spicy:0,en:'Raspberry Dubai chocolate cake',km:'នំខេកឌូប៊ៃរស់ជាតិសូកូឡារ៉ាសប៊ីរី',ko:'라즈베리 두바이 초콜릿 케이크',price:'4.50'},
+  {badge:'D24',cat:'dessert',img:'menu-images/D24.b5a6d722dd35dae5a026.webp',best:false,spicy:0,en:'Peach milk tea cake',km:'នំខេកតែបៃតងរសជាតិផ្លែប៉េស',ko:'복숭아 밀크티 케이크',price:'4.00'},
+  {badge:'D3',cat:'dessert',img:'menu-images/D3.25a8869831a5fe9602a0.webp',best:false,spicy:0,en:'Chocolate Cake',km:'នំខេកសូកូឡា',ko:'초콜릿 케이크',price:'4.00'},
+  {badge:'D7',cat:'dessert',img:'menu-images/D7.8443a0774566b2305fd4.webp',best:true,spicy:0,en:'Blueberry Cheese Cake',km:'នំខេក ប្ល៊ូបឺរីឈីស',ko:'블루베리 치즈 케이크',price:'4.00'},
+  {badge:'D8',cat:'dessert',img:'menu-images/D8.162ad9c639b6893ea4f1.webp',best:false,spicy:0,en:'Strawberry Cheese Cake',km:'នំខេក ស្រ្តបឺរីឈីស',ko:'딸기 치즈 케이크',price:'4.00'},
+  {badge:'D12',cat:'dessert',img:'menu-images/D12.65f08cb78c5cfae97620.webp',best:true,spicy:0,en:'Greentea Bingsu',km:'ការ៉េមតែបៃតង',ko:'녹차 빙수',price:'6.00'},
+  {badge:'D13',cat:'dessert',img:'menu-images/D13.66285896f210a5c9cbe9.webp',best:false,spicy:0,en:'Injeolmi Red Bean Bingsu',km:'ការ៉េមសណ្តែកក្រហម',ko:'인절미 팥빙수',price:'6.00'},
+  {badge:'D14',cat:'dessert',img:'menu-images/D14.b1c4e933b0c0daf27425.webp',best:false,spicy:0,en:'Mango Bingsu',km:'ការ៉េមស្វាយទុំ',ko:'망고 빙수',price:'6.00'},
+  {badge:'D15',cat:'dessert',img:'menu-images/D15.a9f6bc63a39207b9fe00.webp',best:false,spicy:0,en:'Mango Sorbet',km:'ការ៉េមសប៊េត រសជាតិស្វាយ',ko:'망고 소르베',price:'4.00'},
+  {badge:'D16',cat:'dessert',img:'menu-images/D16.896b4508564cd0a42fd1.webp',best:false,spicy:0,en:'Lemon Sorbet',km:'ការ៉េមសប៊េត រសជាតិក្រូចឆ្មារ',ko:'레몬 소르베',price:'4.00'},
+  {badge:'D17',cat:'dessert',img:'menu-images/D17.2d1adbfd0657d560d357.webp',best:true,spicy:0,en:'Persimmon Sorbet',km:'ការ៉េមសប៊េត រសជាតិផ្លែទម្លាប់',ko:'홍시 소르베',price:'4.00'},
+  {badge:'D18',cat:'dessert',img:'menu-images/D18.2de67e1ddecd42a9120b.webp',best:false,spicy:0,en:'Roji Monster Icecream_Milk',km:'',ko:'로지 몬스터 아이스크림_밀크',price:'5.00'},
+  {badge:'D19',cat:'dessert',img:'menu-images/D19.25fe898582028d845930.webp',best:true,spicy:0,en:'Roji Monster Icecream_Uji Matcha',km:'',ko:'로지 몬스터 아이스크림_우지 말차',price:'5.00'},
+  {badge:'D20',cat:'dessert',img:'menu-images/D20.514b7e19cff36208fad9.webp',best:false,spicy:0,en:'Roji Monster Icecream_French Cocoa',km:'',ko:'로지 몬스터 아이스크림_초코',price:'5.00'},
+  {badge:'D21',cat:'dessert',img:'menu-images/D21.ef51df5246829979bae6.webp',best:false,spicy:0,en:'Roji Monster Icecream_Black Sesame',km:'',ko:'로지 몬스터 아이스크림_흑임자',price:'5.00'},
+  {badge:'C1',cat:'drinks',img:'menu-images/C1.6d47b1a7207adc50f592.webp',best:false,spicy:0,en:'Espresso',km:'',ko:'에스프레소',price:'3.00'},
+  {badge:'C2',cat:'drinks',img:'menu-images/C2.3cf48c977d69c1848911.webp',best:false,spicy:0,en:'Americano (Hot/Ice)',km:'',ko:'아메리카노 (핫/아이스)',price:'3.50'},
+  {badge:'C3',cat:'drinks',img:'menu-images/C3.1ccb4fbe8dcc8d3718cb.webp',best:true,spicy:0,en:'Latte (Hot/Ice)',km:'',ko:'라떼 (핫/아이스)',price:'4.00'},
+  {badge:'C4',cat:'drinks',img:'menu-images/C4.b630756959d1dec12a89.webp',best:false,spicy:0,en:'Cappuccino',km:'',ko:'카푸치노',price:'4.00'},
+  {badge:'C5',cat:'drinks',img:'menu-images/C5.5c9ea15dce2893300040.webp',best:false,spicy:0,en:'Affogato',km:'',ko:'아포가토',price:'4.50'},
+  {badge:'C6',cat:'drinks',img:'menu-images/C6.6985e668e0ee7eabe796.webp',best:false,spicy:0,en:'Vanilla Latte',km:'',ko:'바닐라 라떼',price:'4.50'},
+  {badge:'C7',cat:'drinks',img:'menu-images/C7.3b80838d89b520a04ad7.webp',best:false,spicy:0,en:'Scotch Caramel Machiato',km:'',ko:'스카치 카라멜 마키아토',price:'4.50'},
+  {badge:'C8',cat:'drinks',img:'menu-images/C8.52e54dd4966f5ae4861f.webp',best:true,spicy:0,en:'Melo Signature Latte',km:'',ko:'멜로 시그니처 라떼',price:'4.50'},
+  {badge:'C9',cat:'drinks',img:'menu-images/C9.76f4493dde8b27636fdc.webp',best:false,spicy:0,en:'Coconut Coffee Smoothie',km:'',ko:'코코넛 커피 스무디',price:'4.50'},
+  {badge:'C10',cat:'drinks',img:'menu-images/C10.b98911f6b1d5e1e44455.webp',best:false,spicy:0,en:'Chocolate Latte (Hot/Ice)',km:'',ko:'초코 라떼 (핫/아이스)',price:'4.00'},
+  {badge:'C11',cat:'drinks',img:'menu-images/C11.c0914bc817bf7bbbb6a4.webp',best:true,spicy:0,en:'Green Tea Latte (Hot/Ice)',km:'',ko:'녹차 라떼 (핫/아이스)',price:'4.00'},
+  {badge:'C12',cat:'drinks',img:'menu-images/C12.fd0b2b85b8b455703d86.webp',best:false,spicy:0,en:'Persimmon Latte',km:'',ko:'홍시 라떼',price:'4.80'},
+  {badge:'C13',cat:'drinks',img:'menu-images/C13.3cdf50e4bf6481e7d7cf.webp',best:false,spicy:0,en:'Earl Grey Tea (Hot/Ice)',km:'',ko:'얼그레이 티 (핫/아이스)',price:'3.50'},
+  {badge:'C14',cat:'drinks',img:'menu-images/C14.860311c779ac6d81655e.webp',best:false,spicy:0,en:'Chamomile Tea (Hot/Ice)',km:'',ko:'카모마일 티 (핫/아이스)',price:'3.50'},
+  {badge:'C15',cat:'drinks',img:'menu-images/C15.25ed14d0af39d6b79ab4.webp',best:false,spicy:0,en:'Peppermint Tea (Hot/Ice)',km:'',ko:'페퍼민트 티 (핫/아이스)',price:'3.50'},
+  {badge:'C16',cat:'drinks',img:'menu-images/C16.6fe0c0a3cb7d49edc09b.webp',best:false,spicy:0,en:'English Breakfast Tea (Hot/Ice)',km:'',ko:'잉글리쉬 블랙퍼스트 티 (핫/아이스)',price:'3.50'},
+  {badge:'C17',cat:'drinks',img:'menu-images/C17.3034b08ef8aa815179ec.webp',best:false,spicy:0,en:'Jeju Volcano Rock Tea (Hot/Ice)',km:'',ko:'제주 화산 락 티 (핫/아이스)',price:'4.00'},
+  {badge:'C18',cat:'drinks',img:'menu-images/C18.027edc90cb916ba194b0.webp',best:false,spicy:0,en:'Jeju Camellia Flower Tea (Hot/Ice)',km:'',ko:'제주 카멜리아 클라워 티 (핫/아이스)',price:'4.00'},
+  {badge:'C19',cat:'drinks',img:'menu-images/C19.0e0e4a069e40b47f40c9.webp',best:true,spicy:0,en:'Jeju Tangerine Tea (Hot/Ice)',km:'',ko:'제주 귤차 티 (핫/아이스)',price:'4.00'},
+  {badge:'C20',cat:'drinks',img:'menu-images/C20.508acac872f70bff0248.webp',best:false,spicy:0,en:'Lemon Ade',km:'',ko:'레몬 에이드',price:'4.00'},
+  {badge:'C21',cat:'drinks',img:'menu-images/C21.41f6ae56bb35dcefb2f4.webp',best:false,spicy:0,en:'Blood Orange Ade',km:'',ko:'블러드 오렌지 에이드',price:'4.00'},
+  {badge:'C22',cat:'drinks',img:'menu-images/C22.7d465dd7976f5c055039.webp',best:true,spicy:0,en:'Passion Fruits Ade',km:'',ko:'패션 후르츠 에이드',price:'4.00'},
+  {badge:'C23',cat:'drinks',img:'menu-images/C23.e872b08c8596ad9d9164.webp',best:false,spicy:0,en:'Yuzu Smoothie',km:'',ko:'유자 스무디',price:'4.50'},
+  {badge:'C24',cat:'drinks',img:'menu-images/C24.8ae694d7eb1c4ea640a7.webp',best:false,spicy:0,en:'Watermelon Smoothie',km:'',ko:'수박 스무디',price:'4.50'},
+  {badge:'C25',cat:'drinks',img:'menu-images/C25.56f0ee3e0b4631ff1571.webp',best:false,spicy:0,en:'Mango Smoothie',km:'',ko:'망고 스무디',price:'4.50'},
+  {badge:'C26',cat:'drinks',img:'menu-images/C26.1bb873d75da497410734.webp',best:true,spicy:0,en:'Triple Berry Smoothie',km:'',ko:'트리플 베리 스무디',price:'4.50'},
+  {badge:'C27',cat:'drinks',img:'menu-images/C27.2ad45ff7630c4a9ced47.webp',best:false,spicy:0,en:'Apple & Carrot Smoothie',km:'',ko:'사과 당근 스무디',price:'4.80'},
+  {badge:'C28',cat:'drinks',img:'menu-images/C28.fd9a3e308e3e0d058cee.webp',best:false,spicy:0,en:'Avocado & Banana Smoothie',km:'',ko:'아보카도 바나나 스무디',price:'4.80'},
+  {badge:'C29',cat:'drinks',img:'menu-images/C29.39e9eb25dee2f54d4d33.webp',best:false,spicy:0,en:'Pineapple & Orange Smoothie',km:'',ko:'파인애플 오렌지 스무디',price:'4.80'},
+  {badge:'C30',cat:'drinks',img:'menu-images/C30.4a70b8a63347ad5d6cad.webp',best:false,spicy:0,en:'Coca Cola',km:'',ko:'코카콜라',price:'2.00'},
+  {badge:'C31',cat:'drinks',img:'menu-images/C31.55aa435176addd1e0fd8.webp',best:false,spicy:0,en:'Coca Cola Light',km:'',ko:'코카콜라 라이트',price:'2.00'},
+  {badge:'C32',cat:'drinks',img:'menu-images/C32.7e152167b13a3d5e7c56.webp',best:false,spicy:0,en:'Sprite',km:'',ko:'스프라이트',price:'2.00'},
+  {badge:'C33',cat:'drinks',img:'menu-images/C33.99bf157cf3643c676184.webp',best:false,spicy:0,en:'Fanta Orange',km:'',ko:'환타 오렌지',price:'2.00'},
+  {badge:'C34',cat:'drinks',img:'menu-images/C34.d08ecec3a735128afdff.webp',best:false,spicy:0,en:'Tonic Water',km:'',ko:'토닉워터',price:'2.00'},
+  {badge:'C35',cat:'drinks',img:'menu-images/C35.5dd46a8dc1e8126d7b68.webp',best:false,spicy:0,en:'Fiji 500ml',km:'',ko:'피지 500ml',price:'3.00'},
+  {badge:'L1',cat:'liquor',img:'menu-images/L1.0c1772c6b75c48afae2c.webp',best:false,spicy:0,en:'Passion Pineapple Punch Mocktail',km:'',ko:'패션 파인애플 펀치 목테일',price:'5.00'},
+  {badge:'L2',cat:'liquor',img:'menu-images/L2.225d20b8be1057679374.webp',best:true,spicy:0,en:'Yuzu Mix Signature',km:'',ko:'유자 믹스 시그니처',price:'6.00'},
+  {badge:'L3',cat:'liquor',img:'menu-images/L3.6218b15e3a801aa352d5.webp',best:false,spicy:0,en:'Bacardi Rum Punch',km:'',ko:'바카디 럼 펀치',price:'6.00'},
+  {badge:'L4',cat:'liquor',img:'menu-images/L4.f337abc419d668f95e33.webp',best:false,spicy:0,en:'Mojito',km:'',ko:'모히토',price:'7.00'},
+  {badge:'L5',cat:'liquor',img:'menu-images/L5.57839f58032435cd7f6b.webp',best:false,spicy:0,en:'Espresso Martini',km:'',ko:'에스프레소 마티니',price:'6.00'},
+  {badge:'L6',cat:'liquor',img:'menu-images/L6.3d3f71884273d0b392af.webp',best:false,spicy:0,en:'Long Island',km:'',ko:'롱 아일랜드',price:'6.00'},
+  {badge:'L7',cat:'liquor',img:'menu-images/L7.2b6b22fa40a7cdaa50e1.webp',best:false,spicy:0,en:'Whiskey Lady',km:'',ko:'위스키 레이디',price:'6.00'},
+  {badge:'L8',cat:'liquor',img:'menu-images/L8.46abfb0122750da6e1e4.webp',best:false,spicy:0,en:'Jim Beam Highball',km:'',ko:'짐빔 하이볼',price:'6.00'},
+  {badge:'L9',cat:'liquor',img:'menu-images/L9.56f874189a543c19b126.webp',best:true,spicy:0,en:'Lemon Shower Squad',km:'',ko:'레몬샤워 스쿼드',price:'6.00'},
+  {badge:'L10',cat:'liquor',img:'menu-images/L10.1f38b85a360b45a58039.webp',best:true,spicy:0,en:'Chamisul Fresh',km:'',ko:'참이슬 후레쉬',price:'6.00'},
+  {badge:'L11',cat:'liquor',img:'menu-images/L11.a7d2eaae2163b0cc8517.webp',best:false,spicy:0,en:'Cheoeum Cheoreom',km:'',ko:'처음처럼',price:'6.00'},
+  {badge:'L12',cat:'liquor',img:'menu-images/L12.b08688ccad6865ffa887.webp',best:false,spicy:0,en:'Jinro Isback',km:'',ko:'진로 이즈백',price:'6.00'},
+  {badge:'L13',cat:'liquor',img:'menu-images/L13.74c59d3f8c9a72474be7.webp',best:false,spicy:0,en:'Cheoeum Cheoreom Sero',km:'',ko:'처음처럼 새로',price:'6.00'},
+  {badge:'L14',cat:'liquor',img:'menu-images/L14.5d1782f69916cb27baa1.webp',best:false,spicy:0,en:'K Rice Wine',km:'',ko:'막걸리',price:'7.00'},
+  {badge:'L15',cat:'liquor',img:'menu-images/L15.fff7eb5afc7438c4db05.webp',best:false,spicy:0,en:'Raspberry Wine',km:'',ko:'복분자',price:'15.00'},
+  {badge:'L16',cat:'liquor',img:'menu-images/L16.3709620c02893311dd29.webp',best:false,spicy:0,en:'Donghak',km:'',ko:'동학',price:'9.00'},
+  {badge:'L17',cat:'liquor',img:'menu-images/L17.e2584a9a8e162646ee2b.webp',best:false,spicy:0,en:'Night in Seoul',km:'',ko:'서울의 밤',price:'18.00'},
+  {badge:'L18',cat:'liquor',img:'menu-images/L18.3cf8c6b7f44abed46f79.webp',best:false,spicy:0,en:'Angkor',km:'',ko:'앙코르',price:'3.00'},
+  {badge:'L19',cat:'liquor',img:'menu-images/L19.a60ec06003b6e491ba34.webp',best:false,spicy:0,en:'Heineken',km:'',ko:'하이네켄',price:'4.00'},
+  {badge:'L20',cat:'liquor',img:'menu-images/L20.e6f0900d041f3129be30.webp',best:false,spicy:0,en:'Tiger',km:'',ko:'타이거',price:'4.00'},
+  {badge:'L22',cat:'liquor',img:'menu-images/L22.b1a14e69f23e639d383b.webp',best:true,spicy:0,en:'Angkor draft beer',km:'',ko:'앙코르 생맥주',price:'3.00'},
+  {badge:'W22',cat:'wine',img:'menu-images/W22.81dacbaba95cf32db162.webp',best:false,spicy:0,en:'White New',km:'Zealand',ko:'Cloudy Bay',price:'73.00'},
+  {badge:'W1',cat:'wine',img:'menu-images/W1.e6d3a2b19ad4ab47e7ca.webp',best:true,spicy:0,en:'Red',km:'Argentina',ko:'Kaiken Estate Malbec',price:'22.00'},
+  {badge:'W2',cat:'wine',img:'menu-images/W2.ca0a5caaaed991e18080.webp',best:false,spicy:0,en:'Red',km:'Chile',ko:'Montes Limited Selection 2021',price:'25.00'},
+  {badge:'W3',cat:'wine',img:'menu-images/W3.79b2bd9198bb7eb97c86.webp',best:false,spicy:0,en:'Red',km:'Italy',ko:'Fantini Montepulciano d\' Abruzzo',price:'26.00'},
+  {badge:'W4',cat:'wine',img:'menu-images/W4.67f838c76a5489bc0c48.webp',best:true,spicy:0,en:'Red',km:'France',ko:'Chateau Platon 2020',price:'29.00'},
+  {badge:'W5',cat:'wine',img:'menu-images/W5.90cba9b1eae9d1096db3.webp',best:true,spicy:0,en:'Red',km:'Italy',ko:'Poggio Civetta Chianti Classico',price:'34.00'},
+  {badge:'W6',cat:'wine',img:'menu-images/W6.ac8ce3e4a0ec35195b5d.webp',best:false,spicy:0,en:'Red',km:'Australia',ko:'Earthworks Shiraz 2021',price:'40.00'},
+  {badge:'W7',cat:'wine',img:'menu-images/W7.6a998b8e3327e39ee790.webp',best:false,spicy:0,en:'Red',km:'France',ko:'LA Closeerie de Camensac',price:'50.00'},
+  {badge:'W8',cat:'wine',img:'menu-images/W8.3a6fd46ed74912c5f365.webp',best:false,spicy:0,en:'Red',km:'Italy',ko:'Fantini Edizione Canque Autoctoni',price:'54.00'},
+  {badge:'W9',cat:'wine',img:'menu-images/W9.659388f3c997b5a8821f.webp',best:false,spicy:0,en:'Red',km:'France',ko:'Chateau La Grace Dieu',price:'75.00'},
+  {badge:'W10',cat:'wine',img:'menu-images/W10.e78c1fbce50d13edaad8.webp',best:false,spicy:0,en:'White',km:'Australia',ko:'Yalumba Y Series Riesling',price:'25.00'},
+  {badge:'W11',cat:'wine',img:'menu-images/W11.9013cb49ab2839745ab1.webp',best:false,spicy:0,en:'White',km:'Australia',ko:'Yalumba Y Series Sangiovese Rose',price:'25.00'},
+  {badge:'W12',cat:'wine',img:'menu-images/W12.d9fc07541f5d95274662.webp',best:true,spicy:0,en:'White',km:'France',ko:'M. Chapoutier Grenache Blanc',price:'27.00'},
+  {badge:'W13',cat:'wine',img:'menu-images/W13.576e47805634670f940a.webp',best:false,spicy:0,en:'White',km:'South Africa',ko:'Radford Dale Vinum Chenin Blanc',price:'38.00'},
+  {badge:'W14',cat:'wine',img:'menu-images/W14.3569b85a5f751579d8ed.webp',best:false,spicy:0,en:'White',km:'France',ko:'Gustave Lorentz Gewurztraminer',price:'44.00'},
+  {badge:'W15',cat:'wine',img:'menu-images/W15.931e549f92fb4481ce7b.webp',best:false,spicy:0,en:'White',km:'California',ko:'Kendall Jackson Chardonnay',price:'50.00'},
+  {badge:'W16',cat:'wine',img:'menu-images/W16.5b090793564681661606.webp',best:false,spicy:0,en:'White',km:'France',ko:'Pascal Jolivet Sancerre Blanc',price:'69.00'},
+  {badge:'W17',cat:'wine',img:'menu-images/W17.3b72319b30f82e1d562d.webp',best:false,spicy:0,en:'Sparkling',km:'Italy',ko:'Prosecco DOC Rose Millesimato',price:'18.00'},
+  {badge:'W18',cat:'wine',img:'menu-images/W18.c0a9a7a2f0f00c6a1030.webp',best:true,spicy:0,en:'Sparkling',km:'Italy',ko:'Astoria Ribolla Gialla',price:'23.00'},
+  {badge:'W19',cat:'wine',img:'menu-images/W19.0746ac26e2a70deacc2c.webp',best:false,spicy:0,en:'Sparkling',km:'France',ko:'Gustave Lorentz Cremant d\'Alsace',price:'44.00'},
+  {badge:'W20',cat:'wine',img:'menu-images/W20.a57ceea4204fdd258f08.webp',best:false,spicy:0,en:'Sparkling',km:'Australia',ko:'Jansz Brut Rose',price:'63.00'},
+  {badge:'W21',cat:'wine',img:'menu-images/W21.d2525074ce1c9d513333.webp',best:false,spicy:0,en:'Sparkling',km:'France',ko:'Nicolas Feuillatte Champagne',price:'105.00'},
+  {badge:'W23',cat:'wine',img:'menu-images/W23.f710e3daa7185a8dae25.webp',best:false,spicy:0,en:'Sparkling',km:'France',ko:'Gustave Lorentz Crémant d’Alsace Brut',price:'44.00'}
+];
+
+const CATS = ['starter','brunch','main','dessert','drinks','liquor','wine'];
+
+const T = {
+  en: {
+    menu_title:'Our Menu', menu_sub:'Fresh flavors inspired by Korea, crafted in Phnom Penh',
+    cat_starter:'Starter', cat_brunch:'Brunch', cat_main:'Main Dishes',
+    cat_dessert:'Dessert', cat_drinks:'Drinks', cat_liquor:'Liquor', cat_wine:'Wine',
+    best:'Best'
+  },
+  km: {
+    menu_title:'ម៉ឺនុយរបស់យើង', menu_sub:'រសជាតិស្រស់ 영감受 ពីកូរ៉េ បង្កើតនៅភ្នំពេញ',
+    cat_starter:'អាហារចាប់ផ្ដើម', cat_brunch:'ប្រ៊ន', cat_main:'មុខម្ហូបសំខាន់',
+    cat_dessert:'បង្អែម', cat_drinks:'ភេសជ្ជៈ', cat_liquor:'ស្រា', cat_wine:'វ៉ាំង',
+    best:'ពេញនិយម'
+  },
+  ko: {
+    menu_title:'메뉴', menu_sub:'한국에서 영감을 받아 프놈펜에서 만든 신선한 맛',
+    cat_starter:'스타터', cat_brunch:'브런치', cat_main:'메인 요리',
+    cat_dessert:'디저트', cat_drinks:'음료', cat_liquor:'주류', cat_wine:'와인',
+    best:'베스트'
+  }
+};
+
+let currentLang = 'en';
+let currentCat = 'all';
+
+function detectLang() {
+  const l = navigator.language || 'en';
+  if (l.startsWith('km') || l.startsWith('kh')) return 'km';
+  if (l.startsWith('ko')) return 'ko';
+  return 'en';
+}
+
+function applyLang(lang) {
+  currentLang = lang;
+  // Update i18n elements
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (T[lang][key]) el.textContent = T[lang][key];
+  });
+  // Font class on body
+  document.body.classList.remove('font-km','font-ko');
+  if (lang === 'km') document.body.classList.add('font-km');
+  if (lang === 'ko') document.body.classList.add('font-ko');
+  // Lang button
+  const flags = {en:'🇬🇧', km:'🇰🇭', ko:'🇰🇷'};
+  const names = {en:'English', km:'ភាសាខ្មែរ', ko:'한국어'};
+  document.querySelector('.lang-flag').textContent = flags[lang];
+  document.querySelector('.lang-toggle-name').textContent = names[lang];
+  document.querySelectorAll('.lang-option').forEach(btn => {
+    const bl = btn.dataset.lang;
+    btn.classList.toggle('active', bl === lang);
+    btn.textContent = `${flags[bl]} ${names[bl]}${bl === lang ? ' ✓' : ''}`;
+  });
+  renderMenu();
+}
+
+function getItemName(item) {
+  return item[currentLang] || item.en;
+}
+
+function renderMenu() {
+  const container = document.getElementById('menuContainer');
+  container.innerHTML = '';
+  
+  CATS.forEach(cat => {
+    const catItems = MENU.filter(i => i.cat === cat);
+    if (!catItems.length) return;
+    
+    const section = document.createElement('div');
+    section.className = 'cat-section';
+    section.id = `cat-${cat}`;
+    
+    // Heading
+    const heading = document.createElement('h2');
+    heading.className = 'cat-heading';
+    heading.textContent = T[currentLang][`cat_${cat}`] || cat;
+    section.appendChild(heading);
+    
+    // Grid
+    const grid = document.createElement('div');
+    grid.className = 'menu-grid';
+    
+    catItems.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'menu-card';
+      
+      const spicyHtml = item.spicy > 0
+        ? `<div class="card-spicy">${'🌶️'.repeat(item.spicy)}</div>`
+        : '';
+      
+      card.innerHTML = `
+        <div class="card-img-wrap">
+          <img src="${item.img}" alt="${item.en}" loading="lazy" onerror="this.src='logo melo.png'">
+          <span class="card-badge">${item.badge}</span>
+          ${item.best ? `<span class="card-best">${T[currentLang].best || 'Best'}</span>` : ''}
+        </div>
+        <div class="card-body">
+          ${spicyHtml}
+          <div class="card-name">${getItemName(item)}</div>
+          <div class="card-price">$<span>${item.price}</span></div>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+    
+    section.appendChild(grid);
+    container.appendChild(section);
+  });
+}
+
+// Category tab scrolling
+function setupTabs() {
+  document.querySelectorAll('.cat-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const cat = tab.dataset.cat;
+      document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const section = document.getElementById(`cat-${cat}`);
+      if (section) {
+        const offset = document.getElementById('cat-tabs').getBoundingClientRect().bottom + window.scrollY;
+        window.scrollTo({ top: section.offsetTop - 60 - 50, behavior: 'smooth' });
+      }
+    });
+  });
+}
+
+// Intersection observer to update active tab while scrolling
+function setupScrollSpy() {
+  const tabH = document.getElementById('cat-tabs').offsetHeight;
+  const navH = document.getElementById('navbar').offsetHeight;
+  const offset = navH + tabH + 20;
+  
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const cat = entry.target.id.replace('cat-', '');
+        document.querySelectorAll('.cat-tab').forEach(t => {
+          t.classList.toggle('active', t.dataset.cat === cat);
+        });
+        // Scroll tab into view
+        const activeTab = document.querySelector(`.cat-tab[data-cat="${cat}"]`);
+        if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
+    });
+  }, { rootMargin: `-${offset}px 0px -50% 0px` });
+  
+  CATS.forEach(cat => {
+    const el = document.getElementById(`cat-${cat}`);
+    if (el) observer.observe(el);
+  });
+}
+
+// Language dropdown toggle
+document.getElementById('langToggle').addEventListener('click', e => {
+  e.stopPropagation();
+  document.getElementById('langDropdown').classList.toggle('open');
+});
+document.addEventListener('click', () => document.getElementById('langDropdown').classList.remove('open'));
+document.querySelectorAll('.lang-option').forEach(btn => {
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    applyLang(btn.dataset.lang);
+    document.getElementById('langDropdown').classList.remove('open');
+  });
+});
+
+// Init
+currentLang = detectLang();
+renderMenu();
+applyLang(currentLang);
+setupTabs();
+setTimeout(setupScrollSpy, 100);
+
+// FAB contact popup
+const fabContact   = document.getElementById('fabContact');
+const contactPopup = document.getElementById('contactPopup');
+const orderImgHTML = `<img src="icon/icon order.png" alt="Contact" width="30" height="30" style="object-fit:contain;">`;
+const closeIconSVG = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+
+fabContact.addEventListener('click', e => {
+  e.stopPropagation();
+  const isOpen = contactPopup.classList.contains('open');
+  contactPopup.classList.toggle('open', !isOpen);
+  fabContact.innerHTML = isOpen ? orderImgHTML : closeIconSVG;
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.fab-group')) {
+    contactPopup.classList.remove('open');
+    fabContact.innerHTML = orderImgHTML;
+  }
+});
+</script>
+
+<!-- FAB buttons -->
+<div class="fab-group">
+  <div style="position:relative;">
+    <div class="contact-popup" id="contactPopup">
+      <div class="contact-popup-arrow"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #f0ebe5;">
+        <img src="logo melo.png" alt="Melo" style="height:40px;width:40px;border-radius:10px;flex-shrink:0;">
+        <div>
+          <div style="font-weight:800;font-size:0.95rem;color:#1A0D00;line-height:1.2;">Melo Korean Fusion</div>
+          <a href="https://maps.google.com/maps?q=Melo+Korean+Fusion+Restaurant,+Street+360,+Phnom+Penh,+Cambodia"
+             target="_blank" rel="noopener"
+             style="font-size:0.75rem;color:#E97A2F;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:3px;margin-top:2px;">
+            📍 34 Street 360, Phnom Penh
+          </a>
+        </div>
+      </div>
+      <p class="contact-popup-title">📋 Reserve a Table</p>
+      <a class="contact-option" href="https://t.me/MeloRestaurant" target="_blank" rel="noopener">
+        <div class="contact-option-icon tg">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="#2AABEE"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
+        </div>
+        <div class="contact-option-text">
+          <strong>Telegram</strong>
+          <span>@MeloRestaurant</span>
+        </div>
+      </a>
+      <a class="contact-option" href="tel:+85515797090">
+        <div class="contact-option-icon tel">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="#34C759"><path d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1 1 0 011.01-.24c1.12.37 2.33.57 3.58.57a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.46.57 3.58a1 1 0 01-.25 1.01l-2.2 2.2z"/></svg>
+        </div>
+        <div class="contact-option-text">
+          <strong>+855 15 797 090</strong>
+          <span>Call us directly</span>
+        </div>
+      </a>
+    </div>
+    <button class="fab fab-contact" id="fabContact" aria-label="Contact">
+      <img src="icon/icon order.png" alt="Contact" width="30" height="30" style="object-fit:contain;">
+    </button>
+  </div>
+  <a class="fab fab-address"
+     href="https://maps.google.com/maps?q=Melo+Korean+Fusion+Restaurant,+Street+360,+Phnom+Penh,+Cambodia"
+     target="_blank" rel="noopener" aria-label="Open in Google Maps">
+    <img src="icon/icon map.png" alt="Map" width="30" height="30" style="object-fit:contain;">
+  </a>
+</div>
+
+</body>
+</html>
