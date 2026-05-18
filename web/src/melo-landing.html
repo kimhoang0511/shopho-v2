@@ -573,6 +573,13 @@
       .lang-toggle-name { display: none; }
       .lang-toggle { padding: 6px 10px; gap: 4px; }
       .lang-toggle-arrow { width: 13px; height: 13px; }
+      /* dropdown dùng fixed để thoát khỏi overflow-x:hidden của body */
+      #langDropdownNav .lang-menu {
+        position: fixed;
+        top: 58px;
+        right: 14px;
+        left: auto;
+      }
       /* ẩn a tag logo (cột 1 desktop) khỏi grid flow */
       #navbar > a { display: none; }
       /* mobile menu: hiện đầy đủ */
