@@ -9,6 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy app source and migrations
 COPY backend/ .
 
+# Copy static web pages (landing page, menu, assets)
+COPY web/public/ /app/static/
+
 # Railway injects PORT; default to 8000 for local Docker runs
 ENV PORT=8000
 

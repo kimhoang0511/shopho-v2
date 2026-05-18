@@ -1,9 +1,12 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -63,3 +66,22 @@ app.include_router(api_router)
 @app.get("/health", tags=["infra"])
 async def health():
     return {"status": "ok"}
+
+
+# ── Static pages (clean URLs, no .html needed) ───────────────
+
+_STATIC = "/app/static"
+
+@app.get("/melo-landing")
+@app.get("/melo-landing.html")
+async def melo_landing():
+    return FileResponse(f"{_STATIC}/melo-landing.html")
+
+@app.get("/menu")
+@app.get("/menu.html")
+async def menu_page():
+    return FileResponse(f"{_STATIC}/menu.html")
+
+# Serve all other static assets (images, icons, fonts…)
+if os.path.isdir(_STATIC):
+    app.mount("/", StaticFiles(directory=_STATIC), name="static")
