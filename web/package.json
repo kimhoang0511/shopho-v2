@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "serve dist -p $PORT"
+    "start": "serve -s dist -p $PORT"
   },
   "dependencies": {
     "react": "^18.3.1",
