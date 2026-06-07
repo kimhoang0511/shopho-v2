@@ -195,11 +195,15 @@ async def verify_webhook(request: Request):
 @router.post("/webhook", status_code=200)
 async def receive_message(request: Request):
     settings = get_settings()
+    logger.info("Melo webhook POST received")
+
     if not settings.fb_page_access_token or not settings.anthropic_api_key:
         logger.warning("Melo chatbot not configured — missing env vars")
         return {"status": "not configured"}
 
     body = await request.json()
+    logger.info("Webhook body object=%s", body.get("object"))
+
     if body.get("object") != "page":
         return {"status": "ignored"}
 
@@ -209,11 +213,14 @@ async def receive_message(request: Request):
             message = event.get("message", {})
             text = message.get("text", "").strip()
 
+            logger.info("Incoming message sender=%s text=%r", sender_id, text[:50] if text else "")
+
             if not text or message.get("is_echo"):
                 continue
 
             try:
                 reply = await get_ai_reply(text, settings.anthropic_api_key)
+                logger.info("AI reply generated, sending to FB sender=%s", sender_id)
                 await send_fb_message(sender_id, reply, settings.fb_page_access_token)
             except Exception:
                 logger.exception("Error handling message from %s", sender_id)
