@@ -1,6 +1,5 @@
 import logging
 
-import anthropic
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -170,14 +169,21 @@ async def send_fb_message(recipient_id: str, text: str, page_access_token: str) 
 
 
 async def get_ai_reply(user_message: str, api_key: str) -> str:
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-    message = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=512,
-        system=MELO_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    )
-    return message.content[0].text
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": "grok-3-mini",
+                "max_tokens": 512,
+                "messages": [
+                    {"role": "system", "content": MELO_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
 
 
 @router.get("/webhook", response_class=PlainTextResponse)
@@ -197,7 +203,7 @@ async def receive_message(request: Request):
     settings = get_settings()
     logger.info("Melo webhook POST received")
 
-    if not settings.fb_page_access_token or not settings.anthropic_api_key:
+    if not settings.fb_page_access_token or not settings.xai_api_key:
         logger.warning("Melo chatbot not configured — missing env vars")
         return {"status": "not configured"}
 
@@ -219,7 +225,7 @@ async def receive_message(request: Request):
                 continue
 
             try:
-                reply = await get_ai_reply(text, settings.anthropic_api_key)
+                reply = await get_ai_reply(text, settings.xai_api_key)
                 logger.info("AI reply generated, sending to FB sender=%s", sender_id)
                 await send_fb_message(sender_id, reply, settings.fb_page_access_token)
             except Exception:

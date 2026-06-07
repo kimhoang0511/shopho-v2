@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     # Melo Facebook Messenger chatbot
     fb_page_access_token: str = ""
     fb_verify_token: str = ""
-    anthropic_api_key: str = ""
+    xai_api_key: str = ""
 
 
 @lru_cache
