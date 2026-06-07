@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     def slot_packages(self) -> dict[int, int]:
         return {5: self.slot_price_5, 20: self.slot_price_20, 100: self.slot_price_100}
 
+    # Melo Facebook Messenger chatbot
+    fb_page_access_token: str = ""
+    fb_verify_token: str = ""
+    anthropic_api_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

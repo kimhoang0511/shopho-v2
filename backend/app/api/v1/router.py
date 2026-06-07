@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import admin, app_config, auth, chat, orders, slot_topup, topup, users, ws
+from app.api.v1 import admin, app_config, auth, chat, melo_chatbot, orders, slot_topup, topup, users, ws
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -13,3 +13,4 @@ api_router.include_router(chat.router)
 api_router.include_router(app_config.router)
 api_router.include_router(topup.router)
 api_router.include_router(slot_topup.router)
+api_router.include_router(melo_chatbot.router)

@@ -40,3 +40,6 @@ python-dotenv==1.0.1
 
 # Firebase Cloud Messaging
 firebase-admin==6.5.0
+
+# Melo chatbot
+anthropic==0.40.0
