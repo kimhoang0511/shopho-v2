@@ -82,6 +82,11 @@ async def melo_landing():
 async def menu_page():
     return FileResponse(f"{_STATIC}/menu.html")
 
+@app.get("/melo-privacy")
+@app.get("/melo-privacy.html")
+async def melo_privacy():
+    return FileResponse(f"{_STATIC}/melo-privacy.html")
+
 # Serve all other static assets (images, icons, fonts…)
 if os.path.isdir(_STATIC):
     app.mount("/", StaticFiles(directory=_STATIC), name="static")
