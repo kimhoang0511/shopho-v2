@@ -1,7 +1,6 @@
 {
   "rewrites": [
     { "source": "/melo-landing", "destination": "/melo-landing.html" },
-    { "source": "/menu",         "destination": "/menu.html" },
-    { "source": "/**",           "destination": "/index.html" }
+    { "source": "/menu",         "destination": "/menu.html" }
   ]
 }
