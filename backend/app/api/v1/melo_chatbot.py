@@ -243,14 +243,14 @@ async def receive_message(request: Request):
                 r = await get_redis()
                 await r.set(_CHATBOT_STATE_KEY, "on")
                 logger.info("Chatbot ENABLED by sender=%s", sender_id)
-                await send_fb_message(sender_id, "✅ Chatbot đã được BẬT.", settings.fb_page_access_token)
+                await send_fb_message(sender_id, "✅ The chatbot has been turned ON.", settings.fb_page_access_token)
                 continue
 
             if lower == f"off {_TOGGLE_PASSWORD}":
                 r = await get_redis()
                 await r.set(_CHATBOT_STATE_KEY, "off")
                 logger.info("Chatbot DISABLED by sender=%s", sender_id)
-                await send_fb_message(sender_id, "⏸️ Chatbot đã được TẮT.", settings.fb_page_access_token)
+                await send_fb_message(sender_id, "⏸️ The chatbot has been turned OFF.", settings.fb_page_access_token)
                 continue
 
             # Skip if chatbot is disabled
