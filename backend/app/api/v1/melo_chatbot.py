@@ -24,7 +24,6 @@ MELO_SYSTEM_PROMPT = """You are a friendly and helpful customer service assistan
 - **Facebook**: https://www.facebook.com/melokoreanfusionrestaurant/
 - **Instagram**: https://www.instagram.com/melocambodia/
 - **Telegram**: https://t.me/MeloRestaurant
-- **Website**: https://melo.hancook.food/
 - **Google Maps**: https://maps.google.com/maps?q=Melo+Korean+Fusion+Restaurant,+Street+360,+Phnom+Penh,+Cambodia
 - **Delivery**: Available on Grab, Foodpanda, and E-Get
 
