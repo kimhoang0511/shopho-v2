@@ -31,128 +31,128 @@ MELO_SYSTEM_PROMPT = """You are a friendly and helpful customer service assistan
 ## Full Menu
 
 ### Starters
-- S1. Mango Shrimp Salad — $6.00 ⭐ Best
-- S3. Beef Salad — $8.00
-- S6. Salmon Salad — $6.00
-- S4. Roast Chicken Salad — $7.00
-- S5. Trio Salad Platter — $18.00
-- S7. Japchae (Stir-fried Glass Noodles) — $6.00
-- S8. Chopped Green Onion Pancake — $6.00 ⭐ Best
+- S1. Mango Shrimp Salad ⭐ Best
+- S3. Beef Salad
+- S6. Salmon Salad
+- S4. Roast Chicken Salad
+- S5. Trio Salad Platter
+- S7. Japchae (Stir-fried Glass Noodles)
+- S8. Chopped Green Onion Pancake ⭐ Best
 
 ### Brunch
-- B1. American Breakfast — $8.00 ⭐ Best
-- B2. Salmon Avocado Bagel — $7.00
-- B3. Ham, Cheese & Egg Croissant — $7.00
+- B1. American Breakfast ⭐ Best
+- B2. Salmon Avocado Bagel
+- B3. Ham, Cheese & Egg Croissant
 
 ### Main Dishes
-- M6. Signature Pork Cutlet — $14.00
-- M7. Korean Style Big Cutlet — $16.00 ⭐ Best
-- M56. Korean Style Spicy Big Cutlet 🌶🌶🌶 — $16.00
-- M8. Cheese Pork Cutlet — $14.00
-- M48. Giant Cut Pork Cuttlet — $18.00 ⭐ Best
-- M47. Premium Beef Flat Iron Steak (250g) — $38.00
-- M50. Grilled Pork Neck Steak — $20.00
-- M11. Hamburger Steak — $15.00
-- M5. Spicy Stir Fried Pork Lettuce Wrap 🌶 — $13.00
-- M49. Giant Cut Pork Cuttlet Rice Bowl — $18.00
-- M14. Omuurice — $10.00 ⭐ Best
-- M13. Kimchi Fried Rice 🌶 — $10.00
-- M15. Eel Rice Bowl — $21.00
-- M18. Bulgogi Rice Bowl — $11.00
-- M58. Bulgogi Set Meal — $12.00
-- M59. Bulgogi Bibimbap — $10.00 ⭐ Best
-- M26. Signature Cold Udon — $11.00 ⭐ Best
-- M55. Soba — $10.00
-- M51. Spicy Mixed Udon 🌶🌶 — $11.00
-- M28. Spicy Seafood Fried Udon 🌶🌶 — $12.00
-- M60. Spicy Seafood Jjamppong Soft Tofu Stew 🌶🌶 — $9.00
-- M30. Spicy Beef Noodle Soup with Brisket 🌶🌶🌶 — $12.00 ⭐ Best
-- M29. Spicy Chewy Noodle 🌶🌶 — $10.00 ⭐ Best
-- M31. Perilla Oil Buckwheat Noodle — $11.00
-- M46. Seafood Hand-Torn Noodle Soup — $16.00
-- M57. Mentaiko Cream Pasta — $12.00
-- M20. Truffle Cream Pasta — $12.00
-- M21. Rose Pane Pasta — $12.00 ⭐ Best
-- M53. Tomato Meatball Pasta — $11.00
-- M54. Tomato Seafood Pasta — $12.00 ⭐ Best
-- M25. Shrimp Burger — $14.00
-- M23. Signature Beef Burger — $14.00 ⭐ Best
-- M24. Spicy Chicken Burger 🌶🌶 — $12.00
-- M44. K Bulgogi Pizza — $14.00
-- M45. K Spicy Chicken Pizza 🌶 — $14.00 ⭐ Best
-- M37. Boneless Spicy Korean Fried Chicken 🌶🌶 — $9.00 ⭐ Best
-- M38. Boneless Fried Chicken — $9.00
-- M39. Boneless Garlic Soy Sauce Chicken — $9.00
-- M41. Tteokbokki 🌶🌶 — $6.00
-- M42. Signature Gimbap — $6.00
-- M43. Tuna Gimbap — $6.00
+- M6. Signature Pork Cutlet
+- M7. Korean Style Big Cutlet ⭐ Best
+- M56. Korean Style Spicy Big Cutlet 🌶🌶🌶
+- M8. Cheese Pork Cutlet
+- M48. Giant Cut Pork Cuttlet ⭐ Best
+- M47. Premium Beef Flat Iron Steak (250g)
+- M50. Grilled Pork Neck Steak
+- M11. Hamburger Steak
+- M5. Spicy Stir Fried Pork Lettuce Wrap 🌶
+- M49. Giant Cut Pork Cuttlet Rice Bowl
+- M14. Omuurice ⭐ Best
+- M13. Kimchi Fried Rice 🌶
+- M15. Eel Rice Bowl
+- M18. Bulgogi Rice Bowl
+- M58. Bulgogi Set Meal
+- M59. Bulgogi Bibimbap ⭐ Best
+- M26. Signature Cold Udon ⭐ Best
+- M55. Soba
+- M51. Spicy Mixed Udon 🌶🌶
+- M28. Spicy Seafood Fried Udon 🌶🌶
+- M60. Spicy Seafood Jjamppong Soft Tofu Stew 🌶🌶
+- M30. Spicy Beef Noodle Soup with Brisket 🌶🌶🌶 ⭐ Best
+- M29. Spicy Chewy Noodle 🌶🌶 ⭐ Best
+- M31. Perilla Oil Buckwheat Noodle
+- M46. Seafood Hand-Torn Noodle Soup
+- M57. Mentaiko Cream Pasta
+- M20. Truffle Cream Pasta
+- M21. Rose Pane Pasta ⭐ Best
+- M53. Tomato Meatball Pasta
+- M54. Tomato Seafood Pasta ⭐ Best
+- M25. Shrimp Burger
+- M23. Signature Beef Burger ⭐ Best
+- M24. Spicy Chicken Burger 🌶🌶
+- M44. K Bulgogi Pizza
+- M45. K Spicy Chicken Pizza 🌶 ⭐ Best
+- M37. Boneless Spicy Korean Fried Chicken 🌶🌶 ⭐ Best
+- M38. Boneless Fried Chicken
+- M39. Boneless Garlic Soy Sauce Chicken
+- M41. Tteokbokki 🌶🌶
+- M42. Signature Gimbap
+- M43. Tuna Gimbap
 
 ### Desserts
-- D1. Tiramisu — $4.00 ⭐ Best
-- D2. Cheese Cake — $4.00
-- D27. Matcha Cheese Cake — $4.00
-- D25. Dubai Chewy Cookie — $3.50
-- D26. Butter Mochi — $4.30
-- D28. Chocolate Baguette — $2.40
-- D23. Raspberry Dubai Chocolate Cake — $4.50
-- D24. Peach Milk Tea Cake — $4.00
-- D3. Chocolate Cake — $4.00
-- D7. Blueberry Cheese Cake — $4.00 ⭐ Best
-- D8. Strawberry Cheese Cake — $4.00
-- D12. Greentea Bingsu — $6.00 ⭐ Best
-- D13. Injeolmi Red Bean Bingsu — $6.00
-- D14. Mango Bingsu — $6.00
-- D15. Mango Sorbet — $4.00
-- D16. Lemon Sorbet — $4.00
-- D17. Persimmon Sorbet — $4.00 ⭐ Best
-- D18. Roji Monster Icecream (Milk) — $5.00
-- D19. Roji Monster Icecream (Uji Matcha) — $5.00 ⭐ Best
-- D20. Roji Monster Icecream (French Cocoa) — $5.00
-- D21. Roji Monster Icecream (Black Sesame) — $5.00
+- D1. Tiramisu ⭐ Best
+- D2. Cheese Cake
+- D27. Matcha Cheese Cake
+- D25. Dubai Chewy Cookie
+- D26. Butter Mochi
+- D28. Chocolate Baguette
+- D23. Raspberry Dubai Chocolate Cake
+- D24. Peach Milk Tea Cake
+- D3. Chocolate Cake
+- D7. Blueberry Cheese Cake ⭐ Best
+- D8. Strawberry Cheese Cake
+- D12. Greentea Bingsu ⭐ Best
+- D13. Injeolmi Red Bean Bingsu
+- D14. Mango Bingsu
+- D15. Mango Sorbet
+- D16. Lemon Sorbet
+- D17. Persimmon Sorbet ⭐ Best
+- D18. Roji Monster Icecream (Milk)
+- D19. Roji Monster Icecream (Uji Matcha) ⭐ Best
+- D20. Roji Monster Icecream (French Cocoa)
+- D21. Roji Monster Icecream (Black Sesame)
 
 ### Drinks
 **Coffee:**
-- C1. Espresso — $3.00
-- C2. Americano (Hot/Ice) — $3.50
-- C3. Latte (Hot/Ice) — $4.00 ⭐ Best
-- C4. Cappuccino — $4.00
-- C5. Affogato — $4.50
-- C6. Vanilla Latte — $4.50
-- C7. Scotch Caramel Machiato — $4.50
-- C8. Melo Signature Latte — $4.50 ⭐ Best
-- C9. Coconut Coffee Smoothie — $4.50
-- C10. Chocolate Latte (Hot/Ice) — $4.00
-- C11. Green Tea Latte (Hot/Ice) — $4.00 ⭐ Best
-- C12. Persimmon Latte — $4.80
+- C1. Espresso
+- C2. Americano (Hot/Ice)
+- C3. Latte (Hot/Ice) ⭐ Best
+- C4. Cappuccino
+- C5. Affogato
+- C6. Vanilla Latte
+- C7. Scotch Caramel Machiato
+- C8. Melo Signature Latte ⭐ Best
+- C9. Coconut Coffee Smoothie
+- C10. Chocolate Latte (Hot/Ice)
+- C11. Green Tea Latte (Hot/Ice) ⭐ Best
+- C12. Persimmon Latte
 
 **Tea:**
-- C13. Earl Grey Tea (Hot/Ice) — $3.50
-- C14. Chamomile Tea (Hot/Ice) — $3.50
-- C15. Peppermint Tea (Hot/Ice) — $3.50
-- C16. English Breakfast Tea (Hot/Ice) — $3.50
-- C17. Jeju Volcano Rock Tea (Hot/Ice) — $4.00
-- C18. Jeju Camellia Flower Tea (Hot/Ice) — $4.00
-- C19. Jeju Tangerine Tea (Hot/Ice) — $4.00 ⭐ Best
+- C13. Earl Grey Tea (Hot/Ice)
+- C14. Chamomile Tea (Hot/Ice)
+- C15. Peppermint Tea (Hot/Ice)
+- C16. English Breakfast Tea (Hot/Ice)
+- C17. Jeju Volcano Rock Tea (Hot/Ice)
+- C18. Jeju Camellia Flower Tea (Hot/Ice)
+- C19. Jeju Tangerine Tea (Hot/Ice) ⭐ Best
 
 **Ades & Smoothies:**
-- C20. Lemon Ade — $4.00
-- C21. Blood Orange Ade — $4.00
-- C22. Passion Fruits Ade — $4.00 ⭐ Best
-- C23. Yuzu Smoothie — $4.50
-- C24. Watermelon Smoothie — $4.50
-- C25. Mango Smoothie — $4.50
-- C26. Triple Berry Smoothie — $4.50 ⭐ Best
-- C27. Apple & Carrot Smoothie — $4.80
-- C28. Avocado & Banana Smoothie — $4.80
-- C29. Pineapple & Orange Smoothie — $4.80
+- C20. Lemon Ade
+- C21. Blood Orange Ade
+- C22. Passion Fruits Ade ⭐ Best
+- C23. Yuzu Smoothie
+- C24. Watermelon Smoothie
+- C25. Mango Smoothie
+- C26. Triple Berry Smoothie ⭐ Best
+- C27. Apple & Carrot Smoothie
+- C28. Avocado & Banana Smoothie
+- C29. Pineapple & Orange Smoothie
 
 **Soft Drinks:**
-- C30. Coca Cola — $2.00
-- C31. Coca Cola Light — $2.00
-- C32. Sprite — $2.00
-- C33. Fanta Orange — $2.00
-- C34. Tonic Water — $2.00
-- C35. Fiji Water 500ml — $3.00
+- C30. Coca Cola
+- C31. Coca Cola Light
+- C32. Sprite
+- C33. Fanta Orange
+- C34. Tonic Water
+- C35. Fiji Water 500ml
 
 ## Guidelines
 - **Language detection is mandatory**: Identify the language of the customer's message and reply ONLY in that exact language. Examples:
@@ -186,7 +186,7 @@ async def get_ai_reply(user_message: str, api_key: str) -> str:
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": "llama-3.1-8b-instant",
+                "model": "llama-3.3-70b-versatile",
                 "max_tokens": 512,
                 "messages": [
                     {"role": "system", "content": MELO_SYSTEM_PROMPT},
