@@ -5,9 +5,13 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from app.config import get_settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/melo", tags=["melo-chatbot"])
+
+_CHATBOT_STATE_KEY = "melo:chatbot:enabled"
+_TOGGLE_PASSWORD = "melo123"
 
 MELO_SYSTEM_PROMPT = """You are a friendly and helpful customer service assistant for Melo Korean Fusion Cuisine restaurant in Phnom Penh, Cambodia.
 
@@ -203,6 +207,12 @@ async def verify_webhook(request: Request):
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
+async def _is_chatbot_enabled() -> bool:
+    r = await get_redis()
+    val = await r.get(_CHATBOT_STATE_KEY)
+    return val != "off"
+
+
 @router.post("/webhook", status_code=200)
 async def receive_message(request: Request):
     settings = get_settings()
@@ -213,7 +223,6 @@ async def receive_message(request: Request):
         return {"status": "not configured"}
 
     body = await request.json()
-    logger.info("Webhook body object=%s", body.get("object"))
 
     if body.get("object") != "page":
         return {"status": "ignored"}
@@ -224,14 +233,33 @@ async def receive_message(request: Request):
             message = event.get("message", {})
             text = message.get("text", "").strip()
 
-            logger.info("Incoming message sender=%s text=%r", sender_id, text[:50] if text else "")
-
             if not text or message.get("is_echo"):
+                continue
+
+            lower = text.lower()
+
+            # Toggle commands
+            if lower == f"on {_TOGGLE_PASSWORD}":
+                r = await get_redis()
+                await r.set(_CHATBOT_STATE_KEY, "on")
+                logger.info("Chatbot ENABLED by sender=%s", sender_id)
+                await send_fb_message(sender_id, "✅ Chatbot đã được BẬT.", settings.fb_page_access_token)
+                continue
+
+            if lower == f"off {_TOGGLE_PASSWORD}":
+                r = await get_redis()
+                await r.set(_CHATBOT_STATE_KEY, "off")
+                logger.info("Chatbot DISABLED by sender=%s", sender_id)
+                await send_fb_message(sender_id, "⏸️ Chatbot đã được TẮT.", settings.fb_page_access_token)
+                continue
+
+            # Skip if chatbot is disabled
+            if not await _is_chatbot_enabled():
+                logger.info("Chatbot disabled, skipping message from sender=%s", sender_id)
                 continue
 
             try:
                 reply = await get_ai_reply(text, settings.groq_api_key)
-                logger.info("AI reply generated, sending to FB sender=%s", sender_id)
                 await send_fb_message(sender_id, reply, settings.fb_page_access_token)
             except Exception:
                 logger.exception("Error handling message from %s", sender_id)
