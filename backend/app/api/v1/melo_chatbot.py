@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import httpx
@@ -12,6 +13,9 @@ router = APIRouter(prefix="/melo", tags=["melo-chatbot"])
 
 _CHATBOT_STATE_KEY = "melo:chatbot:enabled"
 _TOGGLE_PASSWORD = "melo123"
+_PENDING_MSG_TTL = 600       # Redis key TTL in seconds
+_STAFF_REPLIED_TTL = 600     # Redis key TTL in seconds
+_REPLY_DELAY_SECS = 180      # Wait 3 minutes before auto-reply
 
 MELO_SYSTEM_PROMPT = """You are a friendly and helpful customer service assistant for Melo Korean Fusion Cuisine restaurant in Phnom Penh, Cambodia.
 
@@ -234,10 +238,33 @@ async def _is_chatbot_enabled() -> bool:
     return val != "off"
 
 
+async def _delayed_reply(sender_id: str, page_access_token: str, groq_api_key: str) -> None:
+    await asyncio.sleep(_REPLY_DELAY_SECS)
+
+    r = await get_redis()
+
+    # If staff already replied during the wait, skip
+    if await r.get(f"melo:staff_replied:{sender_id}"):
+        logger.info("Staff replied to %s — skipping auto-reply", sender_id)
+        return
+
+    # GETDEL: atomically get and delete the pending message
+    # If None → another task already handled it (multiple messages sent)
+    text = await r.getdel(f"melo:pending:{sender_id}")
+    if not text:
+        return
+
+    try:
+        reply = await get_ai_reply(text, groq_api_key)
+        await send_fb_message(sender_id, reply, page_access_token)
+        logger.info("Auto-reply sent to sender=%s after %ds delay", sender_id, _REPLY_DELAY_SECS)
+    except Exception:
+        logger.exception("Error in delayed reply for sender=%s", sender_id)
+
+
 @router.post("/webhook", status_code=200)
 async def receive_message(request: Request):
     settings = get_settings()
-    logger.info("Melo webhook POST received")
 
     if not settings.fb_page_access_token or not settings.groq_api_key:
         logger.warning("Melo chatbot not configured — missing env vars")
@@ -254,7 +281,14 @@ async def receive_message(request: Request):
             message = event.get("message", {})
             text = message.get("text", "").strip()
 
-            if not text or message.get("is_echo"):
+            if not text:
+                continue
+
+            # Staff replied via Page Inbox → mark so bot won't auto-reply
+            if message.get("is_echo"):
+                r = await get_redis()
+                await r.set(f"melo:staff_replied:{sender_id}", "1", ex=_STAFF_REPLIED_TTL)
+                logger.info("Staff echo detected for sender=%s — suppressing auto-reply", sender_id)
                 continue
 
             lower = text.lower()
@@ -264,25 +298,24 @@ async def receive_message(request: Request):
                 r = await get_redis()
                 await r.set(_CHATBOT_STATE_KEY, "on")
                 logger.info("Chatbot ENABLED by sender=%s", sender_id)
-                await send_fb_message(sender_id, "✅ The chatbot has been turned ON.", settings.fb_page_access_token)
+                await send_fb_message(sender_id, "✅ Chatbot đã được BẬT.", settings.fb_page_access_token)
                 continue
 
             if lower == f"off {_TOGGLE_PASSWORD}":
                 r = await get_redis()
                 await r.set(_CHATBOT_STATE_KEY, "off")
                 logger.info("Chatbot DISABLED by sender=%s", sender_id)
-                await send_fb_message(sender_id, "⏸️ The chatbot has been turned OFF.", settings.fb_page_access_token)
+                await send_fb_message(sender_id, "⏸️ Chatbot đã được TẮT.", settings.fb_page_access_token)
                 continue
 
-            # Skip if chatbot is disabled
             if not await _is_chatbot_enabled():
-                logger.info("Chatbot disabled, skipping message from sender=%s", sender_id)
+                logger.info("Chatbot disabled, skipping sender=%s", sender_id)
                 continue
 
-            try:
-                reply = await get_ai_reply(text, settings.groq_api_key)
-                await send_fb_message(sender_id, reply, settings.fb_page_access_token)
-            except Exception:
-                logger.exception("Error handling message from %s", sender_id)
+            # Store latest message and schedule delayed reply
+            r = await get_redis()
+            await r.set(f"melo:pending:{sender_id}", text, ex=_PENDING_MSG_TTL)
+            asyncio.create_task(_delayed_reply(sender_id, settings.fb_page_access_token, settings.groq_api_key))
+            logger.info("Message queued for sender=%s, auto-reply in %ds", sender_id, _REPLY_DELAY_SECS)
 
     return {"status": "ok"}
